@@ -1,0 +1,63 @@
+@startuml SnakeGameAgentArchitecture
+title Архитектура агента для игры 'Змейка' (Microservices Pattern)
+
+skinparam package {
+    BackgroundColor<<Agents>> #LightBlue
+    BackgroundColor<<Orchestration>> #LightGreen
+    BackgroundColor<<External>> #LightPink
+}
+
+package "Agents Layer" <<Agents>> {
+    component "Code Reviewer Agent" as code_reviewer {
+        Ответственность: Проверка кода и QA
+    }
+    
+    component "Design Assistant Agent" as design_assistant {
+        Ответственность: Архитектурные решения
+    }
+    
+    component "Documentation Agent" as documentation {
+        Ответственность: Генерация документации
+    }
+    
+    component "Project Manager Agent" as project_manager {
+        Ответственность: Управление задачами
+    }
+}
+
+package "Orchestration Layer" <<Orchestration>> {
+    component "n8n Workflows" as n8n {
+        Ответственность: Автоматизация процессов
+    }
+    
+    interface "Service API" as service_api
+}
+
+package "External Services" <<External>> {
+    cloud "OpenRouter" as openrouter {
+        Ответственность: AI Gateway
+    }
+    
+    cloud "n8n Platform" as n8n_platform {
+        Ответственность: Оркестрация
+    }
+}
+
+' Связи между компонентами
+code_reviewer --> service_api
+design_assistant --> service_api
+documentation --> service_api
+project_manager --> service_api
+
+service_api --> n8n
+n8n --> openrouter : API Calls
+n8n --> n8n_platform : Integration
+
+legend right
+    Цветовая схема:
+    <#LightBlue> Agents Layer
+    <#LightGreen> Orchestration
+    <#LightPink> External Services
+endlegend
+
+@enduml
