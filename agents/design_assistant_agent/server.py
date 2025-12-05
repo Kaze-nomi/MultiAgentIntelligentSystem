@@ -18,11 +18,16 @@ import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class DesignType(str, Enum):
     ARCHITECTURE = "architecture"
     FLOWCHART = "flowchart"
     ER_DIAGRAM = "er_diagram"
     SEQUENCE = "sequence"
+    CLASS_DIAGRAM = "class_diagram"
+    COMPONENT = "component"
+    DEPLOYMENT = "deployment"
+
 
 class DesignRequest(BaseModel):
     task: str
@@ -30,72 +35,266 @@ class DesignRequest(BaseModel):
     design_type: DesignType = DesignType.ARCHITECTURE
     style: str = "simple"
 
+
 class DesignResponse(BaseModel):
     task_id: str
     status: str
     plantuml_code: str
     diagram_url: str
     architecture_advice: List[str]
+    files_generated: List[Dict[str, Any]]
     structured_output: Dict[str, Any]
 
-app = FastAPI(title="Design Assistant Agent", version="1.0.0")
+
+app = FastAPI(title="Design Assistant Agent", version="2.0.0")
 
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
 
-def call_llm(prompt: str, model: str = "deepseek/deepseek-chat-v3-0324") -> str:
+
+def call_llm(prompt: str, system_prompt: str = None) -> str:
+    if not system_prompt:
+        system_prompt = """Ты опытный архитектор ПО.
+Создаёшь понятные PlantUML диаграммы.
+Даёшь практичные советы по архитектуре.
+Учитываешь существующую структуру проекта."""
+
     try:
         response = requests.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
-                "model": model,
+                "model": "deepseek/deepseek-chat-v3-0324",
                 "messages": [
-                    {"role": "system", "content": "Ты архитектор ПО. Создавай PlantUML диаграммы и давай советы по архитектуре."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.3
+                "temperature": 0.2
             },
-            timeout=30
+            timeout=90
         )
         
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         return ""
     except Exception as e:
-        logger.error(f"Error calling LLM: {str(e)}")
+        logger.error(f"LLM error: {e}")
         return ""
 
+
 def generate_plantuml_url(plantuml_code: str) -> str:
-    """Генерация URL для PlantUML диаграммы"""
-    # Убираем лишние пробелы
     plantuml_code = plantuml_code.strip()
-    
-    # Кодируем в UTF-8
     utf8_bytes = plantuml_code.encode('utf-8')
-    
-    # Сжимаем с помощью DEFLATE
     compressed = zlib.compress(utf8_bytes, 9)[2:-4]
-    
-    # Кодируем в base64
     encoded = base64.b64encode(compressed).decode('ascii')
-    
-    # Заменяем символы для URL
-    encoded = encoded.translate(str.maketrans({
-        '+': '-',
-        '/': '_'
-    }))
-    
+    encoded = encoded.translate(str.maketrans({'+': '-', '/': '_'}))
     return f"http://www.plantuml.com/plantuml/png/{encoded}"
 
-def generate_architecture_advice(description: str) -> List[str]:
-    """Генерация советов по архитектуре"""
+
+def analyze_existing_architecture(repo_context: Dict[str, Any], tech_stack: Dict[str, Any]) -> Dict[str, Any]:
+    
+    structure = repo_context.get("structure", [])
+    key_files = repo_context.get("key_files", {})
+    
     prompt = f"""
-    На основе следующего описания системы дай 3-5 советов по архитектуре:
+Проанализируй архитектуру проекта:
+
+## Технологический стек:
+{json.dumps(tech_stack, indent=2)}
+
+## Структура файлов:
+{json.dumps(structure[:50], indent=2)}
+
+## Ключевые файлы:
+{json.dumps(list(key_files.keys()), indent=2)}
+
+Определи:
+1. Архитектурный паттерн (monolith, microservices, etc.)
+2. Слои приложения
+3. Основные компоненты
+4. Внешние зависимости
+5. Точки интеграции
+
+Верни JSON:
+{{
+    "pattern": "название паттерна",
+    "layers": ["список слоёв"],
+    "components": [
+        {{"name": "имя", "type": "тип", "responsibility": "ответственность"}}
+    ],
+    "external_services": ["внешние сервисы"],
+    "integration_points": ["точки интеграции"]
+}}
+"""
     
-    {description}
+    response = call_llm(prompt)
     
-    Советы должны быть конкретными и полезными. Верни список советов в JSON формате:
-    {{"advice": ["совет1", "совет2", "совет3"]}}
-    """
+    try:
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group())
+    except:
+        pass
+    
+    return {
+        "pattern": "unknown",
+        "layers": [],
+        "components": [],
+        "external_services": [],
+        "integration_points": []
+    }
+
+
+def generate_diagram_from_context(
+    task: str,
+    design_type: DesignType,
+    tech_stack: Dict[str, Any],
+    repo_context: Dict[str, Any],
+    architecture_analysis: Dict[str, Any]
+) -> str:
+    
+    type_templates = {
+        DesignType.ARCHITECTURE: """
+Создай архитектурную диаграмму компонентов.
+Используй:
+- package для группировки
+- component для компонентов  
+- interface для интерфейсов
+- database для БД
+- cloud для внешних сервисов
+""",
+        DesignType.CLASS_DIAGRAM: """
+Создай диаграмму классов.
+Используй:
+- class для классов
+- interface для интерфейсов
+- abstract для абстрактных классов
+- Покажи наследование и композицию
+""",
+        DesignType.SEQUENCE: """
+Создай диаграмму последовательности.
+Используй:
+- participant/actor для участников
+- -> для синхронных вызовов
+- --> для асинхронных
+- activate/deactivate для активации
+""",
+        DesignType.ER_DIAGRAM: """
+Создай ER диаграмму.
+Используй:
+- entity для сущностей
+- Покажи связи: one-to-many, many-to-many
+- Укажи ключевые поля
+""",
+        DesignType.FLOWCHART: """
+Создай блок-схему процесса.
+Используй:
+- start/stop
+- :действие: для процессов
+- if/else для условий
+- fork/merge для параллельности
+""",
+        DesignType.COMPONENT: """
+Создай диаграмму компонентов.
+Покажи:
+- Основные компоненты
+- Их интерфейсы
+- Зависимости между ними
+""",
+        DesignType.DEPLOYMENT: """
+Создай диаграмму развёртывания.
+Покажи:
+- Серверы/контейнеры
+- Компоненты на них
+- Сетевые соединения
+"""
+    }
+    
+    prompt = f"""
+Создай PlantUML диаграмму типа {design_type.value} для проекта.
+
+## ЗАДАЧА:
+{task}
+
+## АНАЛИЗ АРХИТЕКТУРЫ:
+{json.dumps(architecture_analysis, indent=2, ensure_ascii=False)}
+
+## ТЕХНОЛОГИЧЕСКИЙ СТЕК:
+- Язык: {tech_stack.get('primary_language', 'unknown')}
+- Фреймворки: {', '.join(tech_stack.get('frameworks', []))}
+- Паттерны: {', '.join(tech_stack.get('architecture_patterns', []))}
+
+## ТРЕБОВАНИЯ К ДИАГРАММЕ:
+{type_templates.get(design_type, "Создай подходящую диаграмму")}
+
+## ПРАВИЛА:
+1. Диаграмма должна отражать РЕАЛЬНУЮ структуру проекта
+2. Используй понятные названия компонентов
+3. Добавь title с описанием
+4. Используй цвета для группировки (#LightBlue, #LightGreen, etc.)
+5. Добавь legend если нужно
+
+Верни только PlantUML код, начиная с @startuml и заканчивая @enduml.
+"""
+    
+    response = call_llm(prompt)
+    
+    # Извлекаем PlantUML код
+    lines = response.split('\n')
+    plantuml_lines = []
+    in_plantuml = False
+    
+    for line in lines:
+        if '@startuml' in line:
+            in_plantuml = True
+        if in_plantuml:
+            plantuml_lines.append(line)
+        if '@enduml' in line:
+            break
+    
+    if plantuml_lines:
+        return '\n'.join(plantuml_lines)
+    
+    # Fallback диаграмма
+    components = architecture_analysis.get("components", [])
+    comp_str = "\n".join([f'  component "{c.get("name", "Component")}"' for c in components[:10]])
+    
+    return f"""@startuml
+title {design_type.value.replace("_", " ").title()} Diagram
+
+package "System" {{
+{comp_str if comp_str else '  component "Main Component"'}
+}}
+
+@enduml"""
+
+
+def generate_architecture_advice(
+    task: str,
+    tech_stack: Dict[str, Any],
+    architecture_analysis: Dict[str, Any]
+) -> List[str]:
+    
+    prompt = f"""
+На основе анализа проекта дай 5 практичных советов по архитектуре.
+
+## ЗАДАЧА:
+{task}
+
+## ТЕКУЩАЯ АРХИТЕКТУРА:
+{json.dumps(architecture_analysis, indent=2, ensure_ascii=False)}
+
+## СТЕК:
+{json.dumps(tech_stack, indent=2)}
+
+Дай советы по:
+1. Улучшению текущей архитектуры
+2. Масштабированию
+3. Безопасности
+4. Производительности
+5. Поддерживаемости
+
+Верни JSON:
+{{"advice": ["совет1", "совет2", "совет3", "совет4", "совет5"]}}
+"""
     
     response = call_llm(prompt)
     
@@ -103,182 +302,79 @@ def generate_architecture_advice(description: str) -> List[str]:
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group())
-            return result.get("advice", ["Проверь соблюдение принципов SOLID", "Добавь больше тестов", "Документируй API"])
-        else:
-            return ["Проверь соблюдение принципов SOLID", "Добавь больше тестов", "Документируй API"]
+            return result.get("advice", [])
     except:
-        return ["Проверь соблюдение принципов SOLID", "Добавь больше тестов", "Документируй API"]
+        pass
+    
+    return [
+        "Рассмотрите разделение на слои для лучшей поддерживаемости",
+        "Добавьте интеграционные тесты для критических путей",
+        "Документируйте архитектурные решения (ADR)"
+    ]
 
-def generate_plantuml_diagram(description: str, diagram_type: DesignType) -> str:
-    """Генерация PlantUML кода"""
-    
-    type_prompts = {
-        DesignType.ARCHITECTURE: """
-        Создай PlantUML код для архитектурной диаграммы на основе описания:
-        
-        {description}
-        
-        Диаграмма должна показывать компоненты системы и их взаимодействие.
-        Используй:
-        - component для компонентов
-        - interface для интерфейсов
-        - arrow для связей
-        - package для группировки
-        
-        Верни только PlantUML код без дополнительных объяснений.
-        """,
-        
-        DesignType.FLOWCHART: """
-        Создай PlantUML код для блок-схемы на основе описания:
-        
-        {description}
-        
-        Используй:
-        - start и stop для начала и конца
-        - :действие: для процессов
-        - if для условий
-        - -> для связей
-        
-        Верни только PlantUML код без дополнительных объяснений.
-        """,
-        
-        DesignType.ER_DIAGRAM: """
-        Создай PlantUML код для ER-диаграммы на основе описания:
-        
-        {description}
-        
-        Используй:
-        - entity для сущностей
-        - field для полей
-        - relationship для связей
-        
-        Верни только PlantUML код без дополнительных объяснений.
-        """,
-        
-        DesignType.SEQUENCE: """
-        Создай PlantUML код для диаграммы последовательности на основе описания:
-        
-        {description}
-        
-        Используй:
-        - participant для участников
-        - -> для сообщений
-        - activate для активации
-        - deactivate для деактивации
-        
-        Верни только PlantUML код без дополнительных объяснений.
-        """
-    }
-    
-    prompt = type_prompts.get(diagram_type, type_prompts[DesignType.ARCHITECTURE])
-    prompt = prompt.format(description=description)
-    
-    response = call_llm(prompt)
-    
-    # Очищаем ответ, оставляем только PlantUML код
-    lines = response.split('\n')
-    plantuml_lines = []
-    in_plantuml = False
-    
-    for line in lines:
-        line = line.strip()
-        if line.startswith('@startuml'):
-            in_plantuml = True
-        if in_plantuml:
-            plantuml_lines.append(line)
-        if line.startswith('@enduml'):
-            break
-    
-    if plantuml_lines:
-        return '\n'.join(plantuml_lines)
-    else:
-        # Если не нашли PlantUML, создаем простую диаграмму
-        return f"""@startuml
-title {diagram_type.value.capitalize()} Diagram
-
-package "System" {{
-  component Component1
-  component Component2
-}}
-
-Component1 --> Component2 : Interacts
-@enduml"""
 
 @app.post("/process")
 async def process_design(request: DesignRequest):
-    """Обработка запроса на создание диаграммы"""
     task_id = str(uuid.uuid4())
     
     try:
-        # Генерируем PlantUML код
-        plantuml_code = generate_plantuml_diagram(request.task, request.design_type)
+        data = request.data
+        tech_stack = data.get("tech_stack", {})
+        repo_context = data.get("repo_context", {})
         
-        # Генерируем URL для диаграммы
+        # Анализируем существующую архитектуру
+        architecture_analysis = analyze_existing_architecture(repo_context, tech_stack)
+        
+        # Генерируем диаграмму
+        plantuml_code = generate_diagram_from_context(
+            task=request.task,
+            design_type=request.design_type,
+            tech_stack=tech_stack,
+            repo_context=repo_context,
+            architecture_analysis=architecture_analysis
+        )
+        
+        # Генерируем URL
         diagram_url = generate_plantuml_url(plantuml_code)
         
-        # Генерируем советы по архитектуре
-        advice = generate_architecture_advice(request.task)
+        # Генерируем советы
+        advice = generate_architecture_advice(request.task, tech_stack, architecture_analysis)
         
-        response_data = DesignResponse(
+        # Файлы для создания
+        files_generated = [
+            {
+                "path": f"docs/diagrams/{request.design_type.value}.puml",
+                "content": plantuml_code,
+                "description": f"{request.design_type.value} diagram"
+            }
+        ]
+        
+        response = DesignResponse(
             task_id=task_id,
             status="completed",
             plantuml_code=plantuml_code,
             diagram_url=diagram_url,
             architecture_advice=advice,
+            files_generated=files_generated,
             structured_output={
-                "diagram_type": request.design_type.value,
-                "plantuml_code": plantuml_code,
+                "design_type": request.design_type.value,
+                "architecture_analysis": architecture_analysis,
                 "diagram_url": diagram_url,
-                "advice": advice,
-                "timestamp": datetime.now().isoformat(),
-                "agent": "design_assistant"
+                "timestamp": datetime.now().isoformat()
             }
         )
         
-        return JSONResponse(content=response_data.dict())
+        return JSONResponse(content=response.dict())
         
     except Exception as e:
-        logger.error(f"Error in design process: {str(e)}")
+        logger.error(f"Design error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/generate/diagram")
-async def generate_diagram(request: Dict[str, Any]):
-    """Генерация диаграммы по описанию"""
-    description = request.get("description", "")
-    diagram_type = request.get("type", "architecture")
-    
-    if not description:
-        raise HTTPException(status_code=400, detail="Description is required")
-    
-    try:
-        design_type = DesignType(diagram_type)
-    except:
-        design_type = DesignType.ARCHITECTURE
-    
-    plantuml_code = generate_plantuml_diagram(description, design_type)
-    diagram_url = generate_plantuml_url(plantuml_code)
-    
-    return {
-        "plantuml_code": plantuml_code,
-        "diagram_url": diagram_url,
-        "type": diagram_type
-    }
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "design_assistant"}
+    return {"status": "healthy", "service": "design_assistant", "version": "2.0.0"}
 
-@app.get("/")
-async def root():
-    return {
-        "service": "Design Assistant Agent",
-        "version": "1.0.0",
-        "endpoints": {
-            "process": "POST /process - Create diagram from task",
-            "generate_diagram": "POST /generate/diagram - Generate diagram from description"
-        },
-        "supported_diagram_types": ["architecture", "flowchart", "er_diagram", "sequence"]
-    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

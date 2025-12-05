@@ -17,12 +17,15 @@ import markdown
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class DocumentationType(str, Enum):
     API = "api"
     CODE = "code"
     README = "readme"
     USER_GUIDE = "user_guide"
     CHANGELOG = "changelog"
+    ARCHITECTURE = "architecture"
+
 
 class DocumentationRequest(BaseModel):
     task: str
@@ -30,245 +33,313 @@ class DocumentationRequest(BaseModel):
     doc_type: DocumentationType = DocumentationType.CODE
     format: str = "markdown"
 
+
 class DocumentationResponse(BaseModel):
     task_id: str
     status: str
     documentation: Dict[str, Any]
+    files_generated: List[Dict[str, Any]]
     structured_output: Dict[str, Any]
 
-app = FastAPI(title="Documentation Agent", version="1.0.0")
+
+app = FastAPI(title="Documentation Agent", version="2.0.0")
 
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
 
-def call_llm(prompt: str, model: str = "deepseek/deepseek-chat-v3-0324") -> str:
+
+def call_llm(prompt: str, system_prompt: str = None) -> str:
+    if not system_prompt:
+        system_prompt = """Ты профессиональный технический писатель.
+Создаёшь понятную, структурированную документацию.
+Используешь примеры кода и диаграммы где уместно.
+Адаптируешь стиль под существующую документацию проекта."""
+
     try:
         response = requests.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
-                "model": model,
+                "model": "deepseek/deepseek-chat-v3-0324",
                 "messages": [
-                    {"role": "system", "content": "Ты технический писатель. Создавай качественную, понятную документацию."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.3
             },
-            timeout=30
+            timeout=90
         )
         
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         return ""
     except Exception as e:
-        logger.error(f"Error calling LLM: {str(e)}")
+        logger.error(f"LLM error: {e}")
         return ""
 
-def analyze_code_for_documentation(code: str) -> Dict[str, Any]:
-    """Анализ кода для документации"""
+
+def analyze_existing_docs(repo_context: Dict[str, Any]) -> Dict[str, Any]:
+    key_files = repo_context.get("key_files", {})
+    
+    doc_files = {}
+    for path, content in key_files.items():
+        if any(x in path.lower() for x in ["readme", "doc", "guide", "changelog"]):
+            doc_files[path] = content[:3000]
+    
+    if not doc_files:
+        return {
+            "has_docs": False,
+            "style": "standard",
+            "sections": []
+        }
+    
     prompt = f"""
-    Проанализируй следующий код и извлеки информацию для документации:
-    
-    ```python
-    {code}
-    ```
-    
-    Извлеки:
-    1. Основные функции/методы с параметрами
-    2. Классы и их назначение
-    3. Ключевые алгоритмы
-    4. Зависимости
-    5. Примеры использования
-    
-    Верни JSON с информацией.
-    """
+Проанализируй существующую документацию проекта:
+
+{json.dumps(doc_files, indent=2, ensure_ascii=False)}
+
+Определи:
+1. Стиль документации (формальный/неформальный)
+2. Структуру секций
+3. Используемые форматы (markdown features)
+4. Язык документации
+
+Верни JSON:
+{{
+    "has_docs": true,
+    "style": "formal/informal",
+    "language": "ru/en",
+    "sections": ["список типичных секций"],
+    "markdown_features": ["используемые фичи markdown"],
+    "conventions": ["соглашения по документации"]
+}}
+"""
     
     response = call_llm(prompt)
+    
     try:
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        return json.loads(json_match.group()) if json_match else {}
+        if json_match:
+            return json.loads(json_match.group())
     except:
-        return {}
+        pass
+    
+    return {"has_docs": True, "style": "standard", "sections": []}
 
-def generate_api_documentation(api_info: Dict[str, Any]) -> str:
-    """Генерация API документации"""
-    prompt = f"""
-    Создай API документацию на основе следующей информации:
-    
-    {json.dumps(api_info, ensure_ascii=False, indent=2)}
-    
-    Документация должна включать:
-    1. Описание API
-    2. Список эндпоинтов
-    3. Параметры запросов
-    4. Примеры ответов
-    5. Коды ошибок
-    
-    Используй формат Markdown.
-    """
-    
-    return call_llm(prompt)
 
-def generate_readme(project_info: Dict[str, Any]) -> str:
-    """Генерация README"""
+def generate_documentation(
+    task: str,
+    doc_type: DocumentationType,
+    tech_stack: Dict[str, Any],
+    repo_context: Dict[str, Any],
+    existing_docs_style: Dict[str, Any]
+) -> Dict[str, Any]:
+    
+    structure = repo_context.get("structure", [])[:50]
+    key_files = repo_context.get("key_files", {})
+    
+    type_instructions = {
+        DocumentationType.README: """
+Создай README.md с секциями:
+- Заголовок и бейджи
+- Описание проекта
+- Особенности
+- Требования
+- Установка
+- Быстрый старт
+- Примеры использования
+- API (если есть)
+- Конфигурация
+- Разработка
+- Тестирование
+- Лицензия
+""",
+        DocumentationType.API: """
+Создай API документацию:
+- Обзор API
+- Аутентификация
+- Endpoints с примерами
+- Модели данных
+- Коды ответов
+- Примеры curl/httpie
+""",
+        DocumentationType.ARCHITECTURE: """
+Создай документацию архитектуры:
+- Обзор системы
+- Компоненты
+- Потоки данных
+- Интеграции
+- Решения и обоснования
+""",
+        DocumentationType.CODE: """
+Создай документацию кода:
+- Обзор модуля
+- Классы и функции
+- Примеры использования
+- Зависимости
+""",
+        DocumentationType.CHANGELOG: """
+Создай CHANGELOG.md:
+- Версия и дата
+- Добавлено
+- Изменено
+- Исправлено
+- Удалено
+""",
+        DocumentationType.USER_GUIDE: """
+Создай руководство пользователя:
+- Введение
+- Начало работы
+- Основные функции
+- Примеры
+- FAQ
+- Решение проблем
+"""
+    }
+    
+    doc_style = existing_docs_style.get("style", "standard")
+    doc_lang = existing_docs_style.get("language", "ru")
+    
     prompt = f"""
-    Создай README.md файл на русском языке для проекта со следующей информацией:
-    
-    Название: {project_info.get('name', 'Проект')}
-    Описание: {project_info.get('description', '')}
-    Установка: {project_info.get('installation', '')}
-    Использование: {project_info.get('usage', '')}
-    Примеры: {project_info.get('examples', '')}
-    
-    README должен содержать:
-    1. Заголовок и описание
-    2. Быстрый старт
-    3. Установка
-    4. Использование
-    5. Примеры
-    6. Лицензия
-    
-    Верни только Markdown код.
-    """
-    
-    return call_llm(prompt)
+Создай документацию типа {doc_type.value} для проекта.
 
-def generate_code_documentation(code_info: Dict[str, Any]) -> str:
-    """Генерация документации для кода"""
+## ЗАДАЧА:
+{task}
+
+## ТИП ДОКУМЕНТАЦИИ:
+{type_instructions.get(doc_type, "Создай подходящую документацию")}
+
+## ТЕХНОЛОГИЧЕСКИЙ СТЕК:
+- Язык: {tech_stack.get('primary_language', 'unknown')}
+- Фреймворки: {', '.join(tech_stack.get('frameworks', []))}
+
+## СТРУКТУРА ПРОЕКТА:
+{json.dumps(structure, indent=2)}
+
+## СУЩЕСТВУЮЩИЙ КОД:
+{json.dumps(key_files, indent=2, ensure_ascii=False)[:10000]}
+
+## СТИЛЬ ДОКУМЕНТАЦИИ:
+- Стиль: {doc_style}
+- Язык: {doc_lang}
+- Соглашения: {existing_docs_style.get('conventions', [])}
+
+Создай полную, готовую к использованию документацию в формате Markdown.
+"""
+    
+    content = call_llm(prompt)
+    
+    return {
+        "markdown": content,
+        "html": markdown.markdown(content) if content else "",
+        "doc_type": doc_type.value,
+        "metadata": {
+            "generated_at": datetime.now().isoformat(),
+            "style": doc_style,
+            "language": doc_lang
+        }
+    }
+
+
+def generate_inline_docs(
+    code: str,
+    language: str,
+    tech_stack: Dict[str, Any]
+) -> str:
+    docstring_style = "Google" if language == "python" else "JSDoc" if language in ["javascript", "typescript"] else "standard"
+    
     prompt = f"""
-    Создай документацию для кода на основе следующей информации:
-    
-    {json.dumps(code_info, ensure_ascii=False, indent=2)}
-    
-    Документация должна включать:
-    1. Обзор модуля
-    2. Описание классов и методов
-    3. Примеры использования
-    4. Примечания
-    
-    Используй формат Markdown.
-    """
-    
+Добавь документацию к следующему коду.
+
+Язык: {language}
+Стиль docstrings: {docstring_style}
+
+Код:
+```{language}
+{code[:8000]}
+Добавь:
+
+Docstrings для всех функций/методов/классов
+Типизацию параметров и возвращаемых значений
+Примеры использования в docstrings
+Краткие комментарии для сложной логики
+Верни полный код с добавленной документацией.
+"""
     return call_llm(prompt)
 
 @app.post("/process")
 async def process_documentation(request: DocumentationRequest):
-    """Генерация документации"""
     task_id = str(uuid.uuid4())
-    
+
+
     try:
-        # Извлекаем данные
-        code = request.data.get("code", "")
-        commit_message = request.data.get("commit_message", "")
-        project_info = request.data.get("project_info", {})
+        data = request.data
+        tech_stack = data.get("tech_stack", {})
+        repo_context = data.get("repo_context", {})
         
-        # Анализируем код
-        code_info = {}
-        if code:
-            code_info = analyze_code_for_documentation(code)
+        existing_docs_style = analyze_existing_docs(repo_context)
         
-        # Генерируем документацию в зависимости от типа
-        markdown_content = ""
+        documentation = generate_documentation(
+            task=request.task,
+            doc_type=request.doc_type,
+            tech_stack=tech_stack,
+            repo_context=repo_context,
+            existing_docs_style=existing_docs_style
+        )
         
-        if request.doc_type == DocumentationType.API:
-            markdown_content = generate_api_documentation({
-                "description": request.task,
-                "code_info": code_info,
-                "data": request.data
+        files_generated = []
+        
+        file_paths = {
+            DocumentationType.README: "README.md",
+            DocumentationType.API: "docs/api.md",
+            DocumentationType.ARCHITECTURE: "docs/architecture.md",
+            DocumentationType.CODE: "docs/code.md",
+            DocumentationType.CHANGELOG: "CHANGELOG.md",
+            DocumentationType.USER_GUIDE: "docs/user-guide.md"
+        }
+        
+        if documentation.get("markdown"):
+            files_generated.append({
+                "path": file_paths.get(request.doc_type, "docs/documentation.md"),
+                "content": documentation["markdown"],
+                "description": f"Generated {request.doc_type.value} documentation"
             })
-        elif request.doc_type == DocumentationType.README:
-            markdown_content = generate_readme(project_info)
-        elif request.doc_type == DocumentationType.CODE:
-            markdown_content = generate_code_documentation(code_info)
-        else:
-            # Общая документация
-            prompt = f"Создай документацию типа {request.doc_type.value} для:\n{request.task}\n\nДополнительная информация: {json.dumps(request.data, ensure_ascii=False)}"
-            markdown_content = call_llm(prompt)
         
-        # Конвертируем в HTML если нужно
-        html_content = ""
-        if request.format == "html":
-            html_content = markdown.markdown(markdown_content)
-        
-        response_data = DocumentationResponse(
+        response = DocumentationResponse(
             task_id=task_id,
             status="completed",
-            documentation={
-                "markdown": markdown_content,
-                "html": html_content,
-                "format": request.format,
-                "metadata": {
-                    "doc_type": request.doc_type.value,
-                    "generated_at": datetime.now().isoformat(),
-                    "length": len(markdown_content)
-                }
-            },
+            documentation=documentation,
+            files_generated=files_generated,
             structured_output={
-                "documentation": markdown_content,
-                "code_analysis": code_info,
-                "metadata": {
-                    "task": request.task,
-                    "doc_type": request.doc_type.value,
-                    "timestamp": datetime.now().isoformat()
-                }
+                "doc_type": request.doc_type.value,
+                "existing_style": existing_docs_style,
+                "timestamp": datetime.now().isoformat()
             }
         )
         
-        return JSONResponse(content=response_data.dict())
-        
+        return JSONResponse(content=response.dict())
+    
     except Exception as e:
-        logger.error(f"Error generating documentation: {str(e)}")
+        logger.error(f"Documentation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/generate/readme")
-async def generate_readme_endpoint(request: Dict[str, Any]):
-    """Генерация README файла"""
-    project_info = request.get("project_info", {})
-    
-    if not project_info.get("name") and not project_info.get("description"):
-        raise HTTPException(status_code=400, detail="Project name or description is required")
-    
-    readme_content = generate_readme(project_info)
-    
-    return {
-        "readme": readme_content,
-        "html": markdown.markdown(readme_content),
-        "project_info": project_info
-    }
-
-@app.post("/generate/api-docs")
-async def generate_api_docs(request: Dict[str, Any]):
-    """Генерация API документации"""
-    api_info = request.get("api_info", {})
+@app.post("/generate/inline")
+async def generate_inline_documentation(request: Dict[str, Any]):
     code = request.get("code", "")
-    
-    if not api_info and not code:
-        raise HTTPException(status_code=400, detail="API info or code is required")
-    
-    if code:
-        api_info = analyze_code_for_documentation(code)
-    
-    api_docs = generate_api_documentation(api_info)
-    
+    language = request.get("language", "python")
+    tech_stack = request.get("tech_stack", {})
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Code is required")
+
+    documented_code = generate_inline_docs(code, language, tech_stack)
+
     return {
-        "api_documentation": api_docs,
-        "html": markdown.markdown(api_docs)
+        "original_code": code,
+        "documented_code": documented_code,
+        "language": language
     }
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "documentation"}
+    return {"status": "healthy", "service": "documentation", "version": "2.0.0"}
 
-@app.get("/")
-async def root():
-    return {
-        "service": "Documentation Agent",
-        "version": "1.0.0",
-        "endpoints": {
-            "process": "POST /process - Generate documentation",
-            "generate_readme": "POST /generate/readme - Generate README",
-            "generate_api_docs": "POST /generate/api-docs - Generate API docs"
-        },
-        "supported_doc_types": ["api", "code", "readme", "user_guide", "changelog"]
-    }
-
-if __name__ == "__main__":
+if __name__ == "main":
     uvicorn.run(app, host="0.0.0.0", port=8000)

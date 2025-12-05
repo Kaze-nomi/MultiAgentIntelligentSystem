@@ -18,9 +18,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Метрики
-CODE_REVIEWS_TOTAL = Counter('code_reviews_total', 'Total code reviews performed')
-REVIEW_TIME = Histogram('code_review_duration_seconds', 'Time spent on code review')
-ISSUES_FOUND = Counter('code_issues_found', 'Code issues found by type')
+CODE_REVIEWS_TOTAL = Counter('code_reviews_total', 'Total code reviews')
+ISSUES_FOUND = Counter('code_issues_found_total', 'Issues found', ['severity'])
 
 class IssueType(str, Enum):
     BUG = "bug"
@@ -29,13 +28,15 @@ class IssueType(str, Enum):
     STYLE = "style"
     MAINTAINABILITY = "maintainability"
     DOCUMENTATION = "documentation"
+    COMPATIBILITY = "compatibility"
 
 class CodeIssue(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     type: IssueType
     severity: str  # low, medium, high, critical
-    description: str
+    file_path: Optional[str] = None
     line_number: Optional[int] = None
+    description: str
     suggestion: Optional[str] = None
     code_snippet: Optional[str] = None
 
@@ -51,229 +52,275 @@ class CodeReviewResponse(BaseModel):
     status: str
     issues: List[CodeIssue]
     summary: Dict[str, Any]
-    metrics: Dict[str, Any]
+    recommendations: List[str]
+    compatibility_notes: List[str]
     structured_output: Dict[str, Any]
 
-app = FastAPI(title="Code Reviewer Agent", version="1.0.0")
+app = FastAPI(title="Code Reviewer Agent", version="2.0.0")
 
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
 
-def call_llm(prompt: str, model: str = "deepseek/deepseek-chat-v3-0324") -> str:
+
+def call_llm(prompt: str, system_prompt: str = None) -> str:
+    if not system_prompt:
+        system_prompt = """Ты опытный код-ревьюер с 10+ лет опыта.
+Ты отлично знаешь лучшие практики, паттерны проектирования, безопасность и производительность.
+Всегда даёшь конкретные, actionable рекомендации.
+Возвращай ответы в JSON когда указано."""
+
     try:
         response = requests.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
-                "model": model,
+                "model": "deepseek/deepseek-chat-v3-0324",
                 "messages": [
-                    {"role": "system", "content": "Ты опытный код-ревьюер. Анализируй код на ошибки, проблемы безопасности, стиль и качество. Возвращай структурированный JSON ответ."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.1
             },
-            timeout=30
+            timeout=90
         )
         
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         return ""
     except Exception as e:
-        logger.error(f"Error calling LLM: {str(e)}")
+        logger.error(f"LLM error: {e}")
         return ""
 
-def analyze_code(code: str, language: str = "python") -> Dict[str, Any]:
-    """Анализ кода с помощью LLM"""
+
+def analyze_code_with_context(
+    code: str, 
+    language: str, 
+    tech_stack: Dict[str, Any],
+    task_context: str,
+    repo_context: Dict[str, Any]
+) -> Dict[str, Any]:
+    
+    # Извлекаем информацию о стеке
+    frameworks = tech_stack.get("frameworks", [])
+    patterns = tech_stack.get("architecture_patterns", [])
     
     prompt = f"""
-    Проанализируй следующий код на языке {language}:
-    
-    ```{language}
-    {code}
-    ```
-    
-    Проверь:
-    1. Синтаксические ошибки
-    2. Проблемы безопасности
-    3. Производительность
-    4. Стиль кода (PEP8 для Python)
-    5. Качество документации
-    6. Потенциальные баги
-    
-    Для каждой найденной проблемы укажи:
-    - Тип (bug, security, performance, style, maintainability, documentation)
-    - Серьезность (low, medium, high, critical)
-    - Описание
-    - Номер строки (если применимо)
-    - Предложение по исправлению
-    
-    Также предоставь общую оценку качества кода от 1 до 10.
-    
-    Верни ответ в JSON формате:
-    {{
-        "reasoning": "Твое обоснование анализа",
-        "quality_score": 8.5,
-        "issues": [
-            {{
-                "type": "bug/security/performance/style/maintainability/documentation",
-                "severity": "low/medium/high/critical",
-                "description": "Описание проблемы",
-                "line_number": 10,
-                "suggestion": "Как исправить",
-                "code_snippet": "def bad_func():"
-            }}
-        ],
-        "summary": {{
-            "total_issues": 5,
-            "critical_issues": 1,
-            "high_issues": 2,
-            "recommendations": ["рекомендация1", "рекомендация2"]
-        }}
-    }}
-    """
-    
-    with REVIEW_TIME.time():
-        response = call_llm(prompt)
-    
+Проведи детальный код-ревью с учётом контекста проекта.
+
+## КОНТЕКСТ ЗАДАЧИ:
+{task_context}
+
+## ТЕХНОЛОГИЧЕСКИЙ СТЕК:
+- Язык: {language}
+- Фреймворки: {', '.join(frameworks) or 'не указаны'}
+- Архитектура: {', '.join(patterns) or 'не указана'}
+
+## КОД ДЛЯ АНАЛИЗА:
+```{language}
+{code[:15000]}
+СУЩЕСТВУЮЩИЕ ФАЙЛЫ ПРОЕКТА:
+{json.dumps(repo_context.get('structure', [])[:30], indent=2)}
+
+ПРОВЕРЬ:
+Баги и ошибки - логические ошибки, неправильная обработка edge cases
+Безопасность - SQL injection, XSS, утечки данных, небезопасные зависимости
+Производительность - N+1 queries, утечки памяти, неоптимальные алгоритмы
+Совместимость - соответствие стилю проекта, конфликты с существующим кодом
+Качество - читаемость, SOLID принципы, DRY, тестируемость
+Документация - docstrings, комментарии, типизация
+ВЕРНИ JSON:
+{{
+"overall_score": 8.5,
+"issues": [
+{{
+"type": "bug/security/performance/style/maintainability/documentation/compatibility",
+"severity": "critical/high/medium/low",
+"file_path": "путь к файлу если известен",
+"line_number": 42,
+"description": "Подробное описание проблемы",
+"suggestion": "Конкретное решение с примером кода",
+"code_snippet": "проблемный код"
+}}
+],
+"recommendations": [
+"Общие рекомендации по улучшению"
+],
+"compatibility_notes": [
+"Заметки о совместимости с существующим кодом"
+],
+"summary": {{
+"total_issues": 5,
+"critical": 1,
+"high": 2,
+"medium": 1,
+"low": 1,
+"verdict": "Краткий вердикт"
+}}
+}}
+"""
+
+    response = call_llm(prompt)
+
     try:
-        # Ищем JSON в ответе
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group())
             
             # Обновляем метрики
-            issues = result.get("issues", [])
-            for issue in issues:
-                ISSUES_FOUND.labels(type=issue.get("type", "unknown")).inc()
+            for issue in result.get("issues", []):
+                ISSUES_FOUND.labels(severity=issue.get("severity", "unknown")).inc()
             
             CODE_REVIEWS_TOTAL.inc()
             return result
-        else:
-            return {
-                "reasoning": "Не удалось проанализировать код",
-                "quality_score": 0,
-                "issues": [],
-                "summary": {
-                    "total_issues": 0,
-                    "critical_issues": 0,
-                    "high_issues": 0,
-                    "recommendations": ["Требуется ручной анализ"]
-                }
-            }
     except Exception as e:
-        logger.error(f"Error parsing analysis result: {str(e)}")
-        return {
-            "reasoning": f"Ошибка при анализе: {str(e)}",
-            "quality_score": 0,
-            "issues": [],
-            "summary": {
-                "total_issues": 0,
-                "critical_issues": 0,
-                "high_issues": 0,
-                "recommendations": ["Ошибка анализатора"]
-            }
-        }
+        logger.error(f"Parse error: {e}")
 
-def analyze_commit(commit_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Анализ коммита"""
+    return {
+        "overall_score": 0,
+        "issues": [],
+        "recommendations": ["Не удалось проанализировать код"],
+        "compatibility_notes": [],
+        "summary": {"total_issues": 0, "verdict": "Ошибка анализа"}
+    }
+def analyze_for_new_code_generation(
+task: str,
+tech_stack: Dict[str, Any],
+existing_code: Dict[str, str]
+) -> Dict[str, Any]:
+
     prompt = f"""
-    Проанализируй коммит:
-    - Сообщение: {commit_data.get('message', '')}
-    - Изменения: {json.dumps(commit_data.get('changes', {}), ensure_ascii=False)}
-    - Автор: {commit_data.get('author', '')}
-    
-    Определи:
-    1. Качество сообщения коммита
-    2. Соответствие стандартам
-    3. Потенциальные проблемы
-    4. Рекомендации
-    
-    Верни JSON ответ.
-    """
-    
+Проанализируй существующий код проекта и дай рекомендации для новой разработки.
+
+ЗАДАЧА:
+{task}
+
+СТЕК:
+{json.dumps(tech_stack, indent=2)}
+
+СУЩЕСТВУЮЩИЙ КОД:
+{json.dumps(existing_code, indent=2, ensure_ascii=False)[:10000]}
+
+Определи:
+
+Какие паттерны используются в проекте
+Стиль именования (camelCase, snake_case, etc.)
+Структура импортов
+Как обрабатываются ошибки
+Как организованы тесты
+Какие conventions нужно соблюдать
+Верни JSON:
+{{
+"coding_style": {{
+"naming_convention": "snake_case/camelCase",
+"import_style": "описание",
+"error_handling": "описание",
+"docstring_style": "Google/NumPy/etc"
+}},
+"patterns_used": ["список паттернов"],
+"must_follow": ["обязательные правила"],
+"avoid": ["чего избегать"],
+"integration_points": ["где интегрировать новый код"]
+}}
+"""
+
     response = call_llm(prompt)
+
     try:
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        return json.loads(json_match.group()) if json_match else {}
+        if json_match:
+            return json.loads(json_match.group())
     except:
-        return {}
+        pass
+
+    return {
+        "coding_style": {},
+        "patterns_used": [],
+        "must_follow": [],
+        "avoid": [],
+        "integration_points": []
+}
 
 @app.post("/process")
 async def process_code_review(request: CodeReviewRequest):
-    """Обработка запроса на код-ревью"""
     task_id = str(uuid.uuid4())
-    
+
     try:
-        # Логирование начала
-        logger.info(f"Starting code review for task: {request.task}")
+        data = request.data
+        tech_stack = data.get("tech_stack", {"primary_language": request.language})
+        repo_context = data.get("repo_context", {})
+        task_context = data.get("context", request.task)
         
-        result = None
+        # Определяем что анализировать
+        code_to_analyze = request.code or ""
         
-        if request.code:
-            # Анализ предоставленного кода
-            result = analyze_code(request.code, request.language)
-        elif "commit" in request.data:
-            # Анализ коммита
-            result = analyze_commit(request.data["commit"])
-        else:
-            # Общий анализ
-            prompt = f"Проанализируй задачу: {request.task}\nКонтекст: {json.dumps(request.data, ensure_ascii=False)}"
-            response = call_llm(prompt)
-            result = {
-                "reasoning": response,
+        # Если передан контекст с ключевыми файлами, добавляем их
+        if not code_to_analyze and repo_context.get("key_files"):
+            code_to_analyze = json.dumps(repo_context["key_files"], indent=2)
+        
+        if not code_to_analyze:
+            return JSONResponse(content={
+                "task_id": task_id,
+                "status": "completed",
                 "issues": [],
-                "summary": {"recommendations": ["Требуется предоставить код для анализа"]}
-            }
+                "summary": {"message": "Код для анализа не предоставлен"},
+                "recommendations": ["Предоставьте код для анализа"],
+                "compatibility_notes": [],
+                "structured_output": {}
+            })
         
-        # Создаем структурированный ответ
+        # Анализируем
+        result = analyze_code_with_context(
+            code=code_to_analyze,
+            language=request.language,
+            tech_stack=tech_stack,
+            task_context=task_context,
+            repo_context=repo_context
+        )
+        
+        # Формируем ответ
         issues = []
         for issue_data in result.get("issues", []):
             try:
-                issue = CodeIssue(**issue_data)
-                issues.append(issue)
+                issues.append(CodeIssue(**issue_data))
             except Exception as e:
-                logger.warning(f"Error creating issue: {str(e)}")
+                logger.warning(f"Issue parse error: {e}")
         
-        response_data = CodeReviewResponse(
+        response = CodeReviewResponse(
             task_id=task_id,
             status="completed",
             issues=issues,
             summary=result.get("summary", {}),
-            metrics={
-                "total_issues": len(issues),
-                "critical_issues": len([i for i in issues if i.severity == "critical"]),
-                "review_duration": "measured"
-            },
+            recommendations=result.get("recommendations", []),
+            compatibility_notes=result.get("compatibility_notes", []),
             structured_output={
+                "overall_score": result.get("overall_score", 0),
                 "analysis": result,
-                "timestamp": datetime.now().isoformat(),
-                "agent": "code_reviewer"
+                "timestamp": datetime.now().isoformat()
             }
         )
         
-        return JSONResponse(content=response_data.dict())
+        return JSONResponse(content=response.dict())
         
     except Exception as e:
-        logger.error(f"Error in code review: {str(e)}")
+        logger.error(f"Review error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/analyze/file")
-async def analyze_code_file(request: Dict[str, Any]):
-    """Анализ файла с кодом"""
-    code = request.get("code", "")
-    language = request.get("language", "python")
-    
-    if not code:
-        raise HTTPException(status_code=400, detail="Code is required")
-    
-    result = analyze_code(code, language)
+@app.post("/analyze/style")
+async def analyze_project_style(request: Dict[str, Any]):
+
+    task = request.get("task", "")
+    tech_stack = request.get("tech_stack", {})
+    existing_code = request.get("existing_code", {})
+
+    result = analyze_for_new_code_generation(task, tech_stack, existing_code)
+
     return result
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "code_reviewer"}
+    return {"status": "healthy", "service": "code_reviewer", "version": "2.0.0"}
 
 @app.get("/metrics")
 async def metrics():
     return generate_latest()
 
-if __name__ == "__main__":
+if __name__ == "main":
     uvicorn.run(app, host="0.0.0.0", port=8000)

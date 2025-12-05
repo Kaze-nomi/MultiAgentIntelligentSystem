@@ -92,6 +92,7 @@ services:
     ports:
       - "5678:5678"
     environment:
+      - N8N_GITHUB_TOKEN=${GITHUB_TOKEN}
       - N8N_PROTOCOL=http
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
@@ -100,6 +101,8 @@ services:
       - N8N_METRICS=true
       - N8N_LOG_LEVEL=debug
       - N8N_USER_MANAGEMENT_DISABLED=true
+      - N8N_NODE_FUNCTION_ALLOW_BUILTIN=*
+
     env_file:
       - .env
     volumes:

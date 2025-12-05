@@ -1,3 +1,4 @@
 .env
 combined.txt
 mcp_client.py
+n8n_workflows
