@@ -2,3 +2,4 @@
 combined.txt
 mcp_client.py
 n8n_workflows
+/n8n_workflows/*
