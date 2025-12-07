@@ -1,0 +1,41 @@
+@startuml
+title Refactoring Agent and Documentation Services Class Diagram
+
+' Interfaces
+interface i_refactor_service {
+  + analyze_code() : CodeAnalysis
+  + generate_refactoring_plan() : RefactoringPlan
+  + apply_refactoring() : str
+}
+
+interface i_doc_generator {
+  + generate_docstrings() : str
+  + generate_readme() : str
+  + update_api_docs() : str
+}
+
+' Classes
+class refactoring_agent {
+}
+
+class refactor_service {
+  - llm_client : LLMClient
+  - ast_parser : ASTParser
+  + analyze_code(code_path, code_content) : CodeAnalysis
+  + generate_refactoring_plan(analysis) : RefactoringPlan
+  + apply_refactoring(plan, code_path) : str
+}
+
+class doc_generator_service {
+  - llm_client : LLMClient
+  - template_dir : str
+  + generate_docstrings(code_path) : str
+  + generate_readme(project_root) : str
+  + update_api_docs(modules_list) : str
+}
+
+' Relationships
+refactor_service ..|> i_refactor_service
+doc_generator_service ..|> i_doc_generator
+
+@enduml
