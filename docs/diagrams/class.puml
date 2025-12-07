@@ -1,0 +1,45 @@
+@startuml
+title Class Diagram for Snake Game Core Services and Interfaces
+
+interface IGameCore {
+  +start_game() : GameState
+  +move_snake() : GameState
+}
+
+interface IWordProvider {
+  +get_random_word() : str
+}
+
+interface ISnakeGameInterface {
+  +register_game_session(user_id) : str
+  +get_game_state(session_id) : GameStateDTO
+}
+
+class snake_game_core {
+  +start_game() : GameState
+  +move_snake(direction) : GameState
+  +check_collision() : bool
+  --
+  grid_size : tuple[int, int]
+  snake_speed : float
+}
+
+class word_provider {
+  +get_random_word() : str
+  +load_word_list(file_path) : int
+  --
+  word_list_path : str
+  cache_size : int
+}
+
+class snake_game_agent {
+  +register_game_session(user_id) : str
+  +get_game_state(session_id) : GameStateDTO
+  --
+  api_prefix : str
+}
+
+snake_game_core ..|> IGameCore : <<implements>>
+word_provider ..|> IWordProvider : <<implements>>
+snake_game_agent ..|> ISnakeGameInterface : <<implements>>
+@enduml
