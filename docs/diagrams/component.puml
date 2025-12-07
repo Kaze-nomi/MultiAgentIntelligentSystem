@@ -1,0 +1,50 @@
+@startuml
+' Title
+title Snake Game System Component Diagram
+
+' Define layers as packages with colors
+package "Business Layer" as business {
+    component "snake_game_service" as snake_game_service <<Service>>
+    component "snake_ai_service" as snake_ai_service <<Service>>
+    
+    interface "ISnakeGame" as ISnakeGame
+    interface "IAIMoveProvider" as IAIMoveProvider
+}
+
+package "Presentation Layer" as presentation {
+    component "three_d_renderer_service" as three_d_renderer_service <<Service>>
+    component "snake_game_api" as snake_game_api <<Service>>
+}
+
+package "Data Layer" as data {
+    component "game_state_service" as game_state_service <<Service>>
+}
+
+' External dependencies
+component "openrouter_mcp" as openrouter_mcp <<Service>>
+
+' Styling
+skinparam componentStyle rectangle
+skinparam packageset backgroundColor #e0e0e0
+skinparam packageFontColor black
+
+' Component colors
+style snake_game_service fill:#87CEEB,stroke:#000000
+style snake_ai_service fill:#87CEEB,stroke:#000000
+style three_d_renderer_service fill:#90EE90,stroke:#000000
+style snake_game_api fill:#90EE90,stroke:#000000
+style game_state_service fill:#FFD700,stroke:#000000
+style openrouter_mcp fill:#FF69B4,stroke:#000000
+style ISnakeGame fill:#FFB6C1,stroke:#000000
+style IAIMoveProvider fill:#FFB6C1,stroke:#000000
+
+' Dependencies
+snake_ai_service -->> openrouter_mcp : uses>>
+snake_game_api -->> snake_game_service : calls>>
+snake_game_api -->> snake_ai_service : calls>>
+snake_game_api -->> three_d_renderer_service : calls>>
+
+' Interface implementations
+snake_game_service ..> ISnakeGame : implements
+snake_ai_service ..> IAIMoveProvider : implements
+@enduml
