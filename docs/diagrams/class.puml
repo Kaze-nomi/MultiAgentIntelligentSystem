@@ -1,0 +1,65 @@
+@startuml
+' Title
+title Snake Game System Class Diagram
+
+' Interfaces
+interface ISnakeGame {
+  + start_game() : GameState
+  + move_snake() : GameState
+}
+
+interface IAIMoveProvider {
+  + get_ai_move() : str
+}
+
+interface IRenderer {
+  + render_frame() : RenderingResult
+}
+
+interface IGameStorage {
+  + save_state() : bool
+  + load_state() : GameState
+}
+
+interface IGameAPI {
+  + register_endpoints() : None
+}
+
+' Classes
+class snake_game_service {
+  + start_game(difficulty) : GameState
+  + move_snake(direction) : GameState
+  - grid_size : tuple[int, int]
+  - speed : int
+}
+
+class snake_ai_service {
+  + get_ai_move(game_state) : str
+  - ai_model_name : str
+}
+
+class three_d_renderer_service {
+  + render_frame(game_state) : RenderingResult
+  - resolution : tuple[int, int]
+  - shader_type : str
+}
+
+class game_state_service {
+  + save_state(state) : bool
+  + load_state(game_id) : GameState
+  - storage_type : str
+}
+
+class snake_game_api {
+  + register_endpoints(app) : None
+  - api_prefix : str
+}
+
+' Implementation relationships
+snake_game_service ..> ISnakeGame : implements
+snake_ai_service ..> IAIMoveProvider : implements
+three_d_renderer_service ..> IRenderer : implements
+game_state_service ..> IGameStorage : implements
+snake_game_api ..> IGameAPI : implements
+
+@enduml
