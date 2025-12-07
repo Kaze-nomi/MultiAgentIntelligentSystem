@@ -1,5 +1,9 @@
 services:
-  # OpenRouter MCP Server
+  # ============================================================================
+  # CORE SERVICES
+  # ============================================================================
+  
+  # OpenRouter MCP Server - прокси к LLM
   openrouter-mcp:
     build: ./openrouter_mcp
     container_name: openrouter-mcp
@@ -8,6 +12,7 @@ services:
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - PORT=8000
+      - LOG_LEVEL=INFO
     env_file:
       - .env
     networks:
@@ -18,126 +23,190 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
-  # Project Manager Agent
+  # ============================================================================
+  # AGENTS
+  # ============================================================================
+  
+  # Project Manager - координатор
   project-manager:
     build: ./agents/project_manager_agent
-    container_name: project-manager-agent
+    container_name: project-manager
     ports:
       - "8001:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
-      - AGENT_NAME=ProjectManager
+      - ARCHITECT_URL=http://architect:8000
+      - CODE_WRITER_URL=http://code-writer:8000
       - CODE_REVIEWER_URL=http://code-reviewer:8000
       - DOCUMENTATION_URL=http://documentation:8000
-      - DESIGN_ASSISTANT_URL=http://design-assistant:8000
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
     networks:
       - agent-network
     restart: unless-stopped
     depends_on:
-      - openrouter-mcp
-      - code-reviewer
-      - documentation
-      - design-assistant
+      openrouter-mcp:
+        condition: service_healthy
+      architect:
+        condition: service_started
+      code-writer:
+        condition: service_started
+      code-reviewer:
+        condition: service_started
+      documentation:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
-  # Code Reviewer Agent
-  code-reviewer:
-    build: ./agents/code_reviewer_agent
-    container_name: code-reviewer-agent
+  # Architect Agent - проектирование архитектуры
+  architect:
+    build: ./agents/architect_agent
+    container_name: architect
     ports:
       - "8002:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
-      - AGENT_NAME=CodeReviewer
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
     networks:
       - agent-network
     restart: unless-stopped
     depends_on:
-      - openrouter-mcp
+      openrouter-mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Documentation Agent
-  documentation:
-    build: ./agents/documentation_agent
-    container_name: documentation-agent
+  # Code Writer Agent - написание кода
+  code-writer:
+    build: ./agents/code_writer_agent
+    container_name: code-writer
     ports:
       - "8003:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
-      - AGENT_NAME=Documentation
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
     networks:
       - agent-network
     restart: unless-stopped
     depends_on:
-      - openrouter-mcp
+      openrouter-mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Design Assistant Agent
-  design-assistant:
-    build: ./agents/design_assistant_agent
-    container_name: design-assistant-agent
+  # Code Reviewer Agent - проверка кода
+  code-reviewer:
+    build: ./agents/code_reviewer_agent
+    container_name: code-reviewer
     ports:
       - "8004:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
-      - AGENT_NAME=DesignAssistant
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
     networks:
       - agent-network
     restart: unless-stopped
     depends_on:
-      - openrouter-mcp
+      openrouter-mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # n8n
+  # Documentation Agent - документация
+  documentation:
+    build: ./agents/documentation_agent
+    container_name: documentation
+    ports:
+      - "8005:8000"
+    environment:
+      - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
+    networks:
+      - agent-network
+    restart: unless-stopped
+    depends_on:
+      openrouter-mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # ORCHESTRATION
+  # ============================================================================
+  
+  # n8n - workflow automation
   n8n:
     image: n8nio/n8n:latest
     container_name: n8n
     ports:
       - "5678:5678"
     environment:
-      - N8N_GITHUB_TOKEN=${GITHUB_TOKEN}
       - N8N_PROTOCOL=http
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
       - N8N_EDITOR_BASE_URL=http://localhost:5678
       - WEBHOOK_URL=http://localhost:5678
       - N8N_METRICS=true
-      - N8N_LOG_LEVEL=debug
+      - N8N_LOG_LEVEL=info
       - N8N_USER_MANAGEMENT_DISABLED=true
-      - N8N_NODE_FUNCTION_ALLOW_BUILTIN=*
-
+      - GENERIC_TIMEZONE=Europe/Moscow
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - EXECUTIONS_TIMEOUT=50000
+      - EXECUTIONS_TIMEOUT_MAX=100000
     env_file:
       - .env
     volumes:
-      - ./n8n_data:/home/node/.n8n
-      - ./n8n_workflows:/home/node/.n8n
+      - n8n_data:/home/node/.n8n
+      - ./n8n_workflows:/home/node/workflows
     networks:
       - agent-network
     restart: unless-stopped
     depends_on:
-      - project-manager
-      - code-reviewer
-      - documentation
-      - design-assistant
+      project-manager:
+        condition: service_healthy
 
-  # # Prometheus для метрик
+  # ============================================================================
+  # MONITORING
+  # ============================================================================
+  
+  # # Prometheus - метрики
   # prometheus:
   #   image: prom/prometheus:latest
   #   container_name: prometheus
   #   ports:
   #     - "9090:9090"
   #   volumes:
-  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
   #     - prometheus_data:/prometheus
   #   command:
   #     - '--config.file=/etc/prometheus/prometheus.yml'
   #     - '--storage.tsdb.path=/prometheus'
-  #     - '--web.console.libraries=/etc/prometheus/console_libraries'
-  #     - '--web.console.templates=/etc/prometheus/consoles'
-  #     - '--storage.tsdb.retention.time=200h'
+  #     - '--storage.tsdb.retention.time=7d'
   #     - '--web.enable-lifecycle'
   #   networks:
   #     - agent-network
   #   restart: unless-stopped
+  #   profiles:
+  #     - monitoring
 
-  # # Grafana для дашбордов
+  # # Grafana - дашборды
   # grafana:
   #   image: grafana/grafana:latest
   #   container_name: grafana
@@ -145,21 +214,33 @@ services:
   #     - "3000:3000"
   #   environment:
   #     - GF_SECURITY_ADMIN_PASSWORD=admin
-  #     - GF_INSTALL_PLUGINS=grafana-piechart-panel
+  #     - GF_USERS_ALLOW_SIGN_UP=false
   #   volumes:
   #     - grafana_data:/var/lib/grafana
-  #     - ./grafana/provisioning:/etc/grafana/provisioning
+  #     - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
   #   networks:
   #     - agent-network
   #   restart: unless-stopped
   #   depends_on:
   #     - prometheus
+  #   profiles:
+  #     - monitoring
+
+# ============================================================================
+# NETWORKS & VOLUMES
+# ============================================================================
 
 networks:
   agent-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   n8n_data:
+    driver: local
   prometheus_data:
+    driver: local
   grafana_data:
+    driver: local
