@@ -1,0 +1,33 @@
+@startuml
+!theme plain
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+
+title Refactoring and Documentation System: Component Diagram
+
+package "Domain Layer" #LightBlue {
+  [refactoring_agent] as ra #LightBlue
+  [documentation_agent] as da #LightBlue
+  interface "IRefactorService" as irs #Yellow
+  interface "IDocGenerator" as idg #Yellow
+}
+
+package "Business Layer" #LightGreen {
+  component "RefactorService" as rs #LightGreen
+  component "DocGeneratorService" as dgs #LightGreen
+}
+
+cloud "External Services" #LightCoral {
+  component "OpenRouterMCP" as orm #LightCoral
+}
+
+rs ..|> irs : <<implements>>
+dgs ..|> idg : <<implements>>
+
+rs -..> orm : dependency
+dgs -..> orm : dependency
+
+ra *-- rs : composition
+da *-- dgs : composition
+
+@enduml
