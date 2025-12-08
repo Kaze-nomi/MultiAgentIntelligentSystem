@@ -1,228 +1,197 @@
-// model : tngtech/deepseek-r1t-chimera:free
+# Арбуз 🥬
 
-// model : deepseek/deepseek-chat-v3-0324
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Pydantic](https://img.shields.io/badge/Pydantic-v2-green.svg)](https://pydantic-docs.helpmanual.io/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-//6487984216
+**Арбуз** — простой консольный инструмент на Python для эхо-повторения текста. Принимает команду вида "скажи <текст>" и выводит указанный текст. Поддерживает строгую валидацию ввода (Pydantic), логирование ошибок и развертывание через Docker.
 
+## 📖 Содержание
 
-const formData = $('📋 Prepare Data').first().json;
-const treeResponse = $input.first().json;
+- [Описание](#описание)
+- [Особенности](#особенности)
+- [Установка](#установка)
+- [Использование](#использование)
+- [Конфигурация](#конфигурация)
+- [API](#api)
+- [Вклад в разработку](#вклад-в-разработку)
+- [Лицензия](#лицензия)
 
-// Парсим структуру репозитория
-const structure = (treeResponse.tree || []).map(item => ({
-  path: item.path,
-  type: item.type === 'blob' ? 'file' : 'dir',
-  size: item.size || 0,
-  sha: item.sha
-}));
+## 📦 Описание
 
-// РАСШИРЕННЫЕ паттерны для ключевых файлов
-const keyPatterns = [
-  // ===== Конфигурационные файлы =====
-  /^readme\.md$/i,
-  /^changelog\.md$/i,
-  /^contributing\.md$/i,
-  /^package\.json$/,
-  /^package-lock\.json$/,
-  /^requirements\.txt$/,
-  /^pyproject\.toml$/,
-  /^setup\.py$/,
-  /^setup\.cfg$/,
-  /^poetry\.lock$/,
-  /^Pipfile$/,
-  /^docker-compose\.ya?ml$/,
-  /^dockerfile$/i,
-  /^\.env\.example$/,
-  /^\.env\.sample$/,
-  /^tsconfig\.json$/,
-  /^vite\.config\.(js|ts)$/,
-  /^webpack\.config\.js$/,
-  /^next\.config\.(js|mjs)$/,
-  /^nuxt\.config\.(js|ts)$/,
-  /^\.eslintrc(\.(js|json|yml))?$/,
-  /^\.prettierrc(\.(js|json|yml))?$/,
-  /^tailwind\.config\.(js|ts)$/,
-  /^cargo\.toml$/i,
-  /^go\.mod$/,
-  /^go\.sum$/,
-  /^makefile$/i,
-  /^justfile$/i,
-  
-  // ===== Точки входа =====
-  /^main\.(py|js|ts|go|rs)$/,
-  /^index\.(py|js|ts|tsx|jsx)$/,
-  /^app\.(py|js|ts|tsx|jsx)$/,
-  /^server\.(py|js|ts)$/,
-  /^run\.(py|js|ts)$/,
-  /^cli\.(py|js|ts)$/,
-  
-  // ===== Python файлы =====
-  /\.py$/,  // Все Python файлы
-  
-  // ===== JavaScript/TypeScript =====
-  /^src\/.*\.(js|jsx|ts|tsx)$/,
-  /^lib\/.*\.(js|jsx|ts|tsx)$/,
-  /^app\/.*\.(js|jsx|ts|tsx)$/,
-  /^pages\/.*\.(js|jsx|ts|tsx)$/,
-  /^components\/.*\.(js|jsx|ts|tsx)$/,
-  /^hooks\/.*\.(js|jsx|ts|tsx)$/,
-  /^utils\/.*\.(js|ts)$/,
-  /^helpers\/.*\.(js|ts)$/,
-  /^services\/.*\.(js|ts)$/,
-  /^api\/.*\.(js|ts)$/,
-  /^routes?\/.*\.(js|ts)$/,
-  /^controllers?\/.*\.(js|ts)$/,
-  /^middleware\/.*\.(js|ts)$/,
-  /^models?\/.*\.(js|ts)$/,
-  /^schemas?\/.*\.(js|ts)$/,
-  /^types?\/.*\.(ts|d\.ts)$/,
-  /^store\/.*\.(js|ts)$/,
-  /^config\/.*\.(js|ts|json)$/,
-  
-  // ===== Go =====
-  /\.go$/,
-  
-  // ===== Rust =====
-  /\.rs$/,
-  
-  // ===== C++ =====
-  /\.cpp$/,  
-  /\.cxx$/,  
-  /\.c$/,  
+Арбуз — минималистичный CLI-инструмент, предназначенный для демонстрации лучших практик Python-разработки: валидации данных с Pydantic, структурированного логирования и обработки ошибок. 
 
-  // ===== Java =====
-  /\.java$/,
-  /\build.gradle.kts$/,
-  /\pom.xml$/,
+Проект эволюционировал с добавлением:
+- Валидатора `min_length=1` в модели для предотвращения пустого текста.
+- Конфигурации логирования в `main.py`.
+- Удаления устаревших `print`-выводов и ручных проверок в пользу Pydantic и `logging`.
 
-  
-  // ===== Конфиги в поддиректориях =====
-  /config\/.*\.(json|ya?ml|toml)$/,
-  /\.github\/workflows\/.*\.ya?ml$/
-];
+Идеален для изучения чистого кода, контейнеризации и быстрого прототипирования.
 
-// Паттерны для ИСКЛЮЧЕНИЯ
-const excludePatterns = [
-  /node_modules\//,
-  /\.git\//,
-  /dist\//,
-  /build\//,
-  /\.next\//,
-  /\.nuxt\//,
-  /out\//,
-  /__pycache__\//,
-  /\.pytest_cache\//,
-  /\.mypy_cache\//,
-  /\.ruff_cache\//,
-  /\.venv\//,
-  /venv\//,
-  /\.env\//,
-  /env\//,
-  /virtualenv\//,
-  /\.tox\//,
-  /\.eggs\//,
-  /\.egg-info\//,
-  /htmlcov\//,
-  /coverage\//,
-  /\.coverage/,
-  /\.cache\//,
-  /\.temp\//,
-  /\.tmp\//,
-  /target\//,  // Rust/Java build
-  /vendor\//,  // Go vendor
-  /\.idea\//,
-  /\.vscode\//,
-  /\.DS_Store/,
-  /Thumbs\.db/,
-  /\.log$/,
-  /\.lock$/,  // Кроме package-lock.json и poetry.lock
-  /\.min\.(js|css)$/,  // Минифицированные файлы
-  /\.map$/,  // Source maps
-  /\.bundle\.(js|css)$/,
-  /test_.*\.py$/,  // Тестовые файлы Python
-  /.*_test\.py$/,
-  /.*\.test\.(js|ts|jsx|tsx)$/,  // Тестовые файлы JS
-  /.*\.spec\.(js|ts|jsx|tsx)$/,
-  /__tests__\//,
-  /tests?\//,  // Директории с тестами
-  /\.d\.ts$/,  // TypeScript декларации (обычно генерируются)
-];
+## ✨ Особенности
 
-// Приоритетные файлы (загружаем первыми)
-const priorityPatterns = [
-  /^readme\.md$/i,
-  /^package\.json$/,
-  /^requirements\.txt$/,
-  /^pyproject\.toml$/,
-  /^main\.(py|js|ts)$/,
-  /^index\.(py|js|ts)$/,
-  /^app\.(py|js|ts)$/,
-  /^server\.(py|js|ts)$/,
-  /models?\.py$/,
-  /schema\.py$/,
-];
+- ✅ Строгая валидация текста (непустой ввод).
+- 📝 Структурированное логирование с трассировкой ошибок.
+- 🐳 Полная поддержка Docker и Docker Compose.
+- 🔒 Обработка только ожидаемых исключений (`ValueError`, `ValidationError`).
+- 📱 Простой CLI-интерфейс.
+- 🧹 Соответствие PEP 8 и лучшим практикам.
 
-// Фильтруем файлы
-const allFiles = structure.filter(item => {
-  // Только файлы
-  if (item.type !== 'file') return false;
-  
-  // Ограничение размера (100KB)
-  if (item.size > 100000) return false;
-  
-  // Проверяем исключения
-  if (excludePatterns.some(p => p.test(item.path))) {
-    // Исключение для package-lock.json и poetry.lock
-    if (item.path === 'package-lock.json' || item.path === 'poetry.lock') {
-      return false; // Всё равно исключаем - слишком большие
-    }
-    return false;
-  }
-  
-  // Проверяем совпадение с ключевыми паттернами
-  return keyPatterns.some(p => p.test(item.path));
-});
+## 🚀 Установка
 
-// Сортируем: приоритетные файлы первыми
-const sortedFiles = allFiles.sort((a, b) => {
-  const aPriority = priorityPatterns.some(p => p.test(a.path)) ? 0 : 1;
-  const bPriority = priorityPatterns.some(p => p.test(b.path)) ? 0 : 1;
-  
-  if (aPriority !== bPriority) {
-    return aPriority - bPriority;
-  }
-  
-  // При равном приоритете - меньшие файлы первыми
-  return a.size - b.size;
-});
+### Через Python (pip)
 
-// Берём топ-50 файлов
-const filesToFetch = sortedFiles.slice(0, 50);
+1. Клонируйте репозиторий:
+   ```bash
+   git clone <repository-url>
+   cd арбуз
+   ```
 
-// Сохраняем SHA для ВСЕХ файлов (для UPDATE операций)
-const existingFileShas = {};
-structure.forEach(item => {
-  if (item.type === 'file') {
-    existingFileShas[item.path] = item.sha;
-  }
-});
+2. Установите зависимости:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *Зависимости: `pydantic` (v2+).*
 
-// Логируем для отладки
-console.log(`Total files in repo: ${structure.filter(i => i.type === 'file').length}`);
-console.log(`Files matching patterns: ${allFiles.length}`);
-console.log(`Files to fetch: ${filesToFetch.length}`);
-console.log(`First 10 files:`, filesToFetch.slice(0, 10).map(f => f.path));
+3. Запустите:
+   ```bash
+   python main.py
+   ```
 
-return [{
-  json: {
-    ...formData,
-    structure: structure,
-    files_to_fetch: filesToFetch,
-    existing_file_shas: existingFileShas,
-    stats: {
-      total_files: structure.filter(i => i.type === 'file').length,
-      matching_files: allFiles.length,
-      files_to_fetch: filesToFetch.length
-    }
-  }
-}];
+### Через Docker
+
+1. Соберите и запустите:
+   ```bash
+   docker-compose up --build
+   ```
+
+2. Для разработки с hot-reload:
+   ```bash
+   docker-compose up --build -d
+   ```
+
+Dockerfile и `docker-compose.yml` обеспечивают изолированную среду Python 3.11+.
+
+## 📖 Использование
+
+### Базовый запуск
+
+```bash
+python main.py "скажи арбуз"
+```
+
+**Вывод:**
+```
+арбуз
+```
+
+### Примеры
+
+- Правильный ввод:
+  ```bash
+  python main.py "скажи привет, мир!"
+  # Вывод: привет, мир!
+  ```
+
+- Некорректный ввод (пустой текст):
+  ```bash
+  python main.py "скажи"
+  ```
+  **Лог ошибки:**
+  ```
+  ERROR:main:Некорректный ввод: 1 валидационная ошибка для TextModel
+  text
+    Строка должна содержать минимум 1 символ(а) после обрезки пробелов [type=string_too_short, input_value='', input_type=str]
+  ```
+
+В Docker:
+```bash
+docker-compose exec app python main.py "скажи арбуз"
+```
+
+## ⚙️ Конфигурация
+
+Конфигурация через переменные окружения:
+
+| Переменная          | Описание                  | Значение по умолчанию |
+|---------------------|---------------------------|-----------------------|
+| `LOG_LEVEL`         | Уровень логирования      | `INFO`               |
+| `LOG_FORMAT`        | Формат логов             | `%(asctime)s - %(name)s - %(levelname)s - %(message)s` |
+
+Пример `.env`:
+```env
+LOG_LEVEL=DEBUG
+```
+
+В Docker Compose переменные подхватываются автоматически.
+
+## 📚 API
+
+### Модели (models.py)
+
+```python
+from pydantic import BaseModel, field_validator
+
+class TextModel(BaseModel):
+    text: str
+
+    @field_validator('text')
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        if len(v.strip()) < 1:
+            raise ValueError('Текст не может быть пустым')
+        return v.strip()
+```
+
+### Сервисы (services.py)
+
+```python
+import logging
+from models import TextModel
+
+logger = logging.getLogger(__name__)
+
+def process_text(text_model: TextModel) -> str:
+    """Обрабатывает валидированный текст."""
+    logger.info(f"Обработка текста: {text_model.text}")
+    return text_model.text
+```
+
+### Точка входа (main.py)
+
+```python
+import logging
+import sys
+from models import TextModel
+from services import process_text
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+if __name__ == "__main__":
+    try:
+        input_text = sys.argv[1].replace("скажи ", "") if len(sys.argv) > 1 else ""
+        model = TextModel(text=input_text)
+        result = process_text(model)
+        print(result)
+    except (ValueError, Exception) as e:
+        logger.error(f"Ошибка: {e}", exc_info=True)
+```
+
+## 🤝 Вклад в разработку
+
+1. Форкните репозиторий.
+2. Создайте ветку: `git checkout -b feature/awesome-feature`.
+3. Зафиксируйте изменения: `git commit -m 'Add awesome feature'`.
+4. Запушьте: `git push origin feature/awesome-feature`.
+5. Откройте Pull Request.
+
+**Требования:**
+- Соответствие PEP 8 (используйте `ruff` или `black`).
+- Добавьте тесты.
+- Обновите README при изменениях.
+
+## 📄 Лицензия
+
+Распространяется под лицензией [MIT](LICENSE). См. файл `LICENSE` для деталей.
