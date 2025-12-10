@@ -1,0 +1,39 @@
+@startuml
+!theme plain
+title Music Synthesizer Components Diagram
+
+skinparam component<<module>> {
+  BackgroundColor SteelBlue
+  BorderColor Navy
+  FontColor White
+}
+skinparam class {
+  BackgroundColor LightGreen
+  BorderColor DarkGreen
+}
+skinparam component<<external>> {
+  BackgroundColor Orange
+  BorderColor Red
+}
+skinparam package {
+  BackgroundColor LightGray
+  BorderColor Gray
+}
+
+package "Modules" {
+  component "MusicSynthesizerAgent" as MSA <<module>>
+  component "MusicSynthesizerServer" as MSS <<module>>
+}
+
+package "Domain Classes" {
+  class MusicFile
+  class MusicStyle
+}
+
+component "OpenRouterMCP" as ORM <<external>>
+component "ProjectManagerAgent" as PMA <<external>>
+
+MSS ..> ORM : dependency
+MSA ..> PMA : dependency
+
+@enduml
