@@ -1,5 +1,5 @@
 {
-  "name": "Multi-Agent Development System version ULTRA",
+  "name": "Multi-Agent Development System version ULTRA v2",
   "nodes": [
     {
       "parameters": {
@@ -17,16 +17,19 @@
             {
               "fieldLabel": "Владелец репозитория",
               "placeholder": "username",
+              "defaultValue": "kaze-nomi",
               "requiredField": true
             },
             {
               "fieldLabel": "Название репозитория",
               "placeholder": "my-repo",
+              "defaultValue": "MultiAgentIntelligentSystem",
               "requiredField": true
             },
             {
               "fieldLabel": "Основная ветка",
-              "placeholder": "main"
+              "placeholder": "main",
+              "defaultValue": "main"
             }
           ]
         },
@@ -36,10 +39,7 @@
       "name": "📝 Task Input",
       "type": "n8n-nodes-base.formTrigger",
       "typeVersion": 2.1,
-      "position": [
-        -3520,
-        128
-      ],
+      "position": [-3520, 128],
       "webhookId": "dev-task"
     },
     {
@@ -50,10 +50,7 @@
       "name": "📋 Prepare Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -3296,
-        128
-      ]
+      "position": [-3296, 128]
     },
     {
       "parameters": {
@@ -68,10 +65,7 @@
       "name": "📂 Get Repo Structure",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        -3088,
-        128
-      ],
+      "position": [-3088, 128],
       "credentials": {
         "githubApi": {
           "id": "EuDjNHcUwsanYUOc",
@@ -81,16 +75,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const formData = $('📋 Prepare Data').first().json;\nconst treeResponse = $input.first().json;\n\n// Логируем входные данные для отладки\nconsole.log('Tree response keys:', Object.keys(treeResponse));\nconsole.log('Tree array length:', (treeResponse.tree || []).length);\nconsole.log('First 3 items:', JSON.stringify((treeResponse.tree || []).slice(0, 3), null, 2));\n\n// Парсим структуру репозитория\nconst structure = (treeResponse.tree || []).map(item => ({\n  path: item.path,\n  type: item.type === 'blob' ? 'file' : 'dir',\n  originalType: item.type,  // Сохраняем оригинальный тип для отладки\n  size: item.size || 0,\n  sha: item.sha\n}));\n\n// РАСШИРЕННЫЕ паттерны для ключевых файлов\nconst keyPatterns = [\n  // ===== Конфигурационные файлы =====\n  /^readme\\.md$/i,\n  /^changelog\\.md$/i,\n  /^contributing\\.md$/i,\n  /^package\\.json$/,\n  /^package-lock\\.json$/,\n  /^requirements\\.txt$/,\n  /^pyproject\\.toml$/,\n  /^setup\\.py$/,\n  /^setup\\.cfg$/,\n  /^poetry\\.lock$/,\n  /^Pipfile$/,\n  /^docker-compose\\.ya?ml$/,\n  /^dockerfile$/i,\n  /^\\.env\\.example$/,\n  /^\\.env\\.sample$/,\n  /^tsconfig\\.json$/,\n  /^vite\\.config\\.(js|ts)$/,\n  /^webpack\\.config\\.js$/,\n  /^next\\.config\\.(js|mjs)$/,\n  /^nuxt\\.config\\.(js|ts)$/,\n  /^\\.eslintrc(\\.(js|json|yml))?$/,\n  /^\\.prettierrc(\\.(js|json|yml))?$/,\n  /^tailwind\\.config\\.(js|ts)$/,\n  /^cargo\\.toml$/i,\n  /^go\\.mod$/,\n  /^go\\.sum$/,\n  /^makefile$/i,\n  /^justfile$/i,\n  \n  // ===== Точки входа =====\n  /^main\\.(py|js|ts|go|rs)$/,\n  /^index\\.(py|js|ts|tsx|jsx)$/,\n  /^app\\.(py|js|ts|tsx|jsx)$/,\n  /^server\\.(py|js|ts)$/,\n  /^run\\.(py|js|ts)$/,\n  /^cli\\.(py|js|ts)$/,\n  \n  // ===== Python файлы =====\n  /\\.py$/,\n  \n  // ===== JavaScript/TypeScript =====\n  /^src\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^lib\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^app\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^pages\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^components\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^hooks\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^utils\\/.*\\.(js|ts)$/,\n  /^helpers\\/.*\\.(js|ts)$/,\n  /^services\\/.*\\.(js|ts)$/,\n  /^api\\/.*\\.(js|ts)$/,\n  /^routes?\\/.*\\.(js|ts)$/,\n  /^controllers?\\/.*\\.(js|ts)$/,\n  /^middleware\\/.*\\.(js|ts)$/,\n  /^models?\\/.*\\.(js|ts)$/,\n  /^schemas?\\/.*\\.(js|ts)$/,\n  /^types?\\/.*\\.(ts|d\\.ts)$/,\n  /^store\\/.*\\.(js|ts)$/,\n  /^config\\/.*\\.(js|ts|json)$/,\n  \n  // ===== Другие языки =====\n  /\\.go$/,\n  /\\.rs$/,\n  /\\.cpp$/,\n  /\\.cxx$/,\n  /\\.c$/,\n  /\\.java$/,\n  /build\\.gradle\\.kts$/,\n  /pom\\.xml$/,\n  \n  // ===== Конфиги в поддиректориях =====\n  /config\\/.*\\.(json|ya?ml|toml)$/,\n  /\\.github\\/workflows\\/.*\\.ya?ml$/\n];\n\n// Паттерны для ИСКЛЮЧЕНИЯ\nconst excludePatterns = [\n  /node_modules\\//,\n  /\\.git\\//,\n  /dist\\//,\n  /build\\//,\n  /\\.next\\//,\n  /\\.nuxt\\//,\n  /out\\//,\n  /__pycache__\\//,\n  /\\.pytest_cache\\//,\n  /\\.mypy_cache\\//,\n  /\\.ruff_cache\\//,\n  /\\.venv\\//,\n  /venv\\//,\n  /\\.env\\//,\n  /env\\//,\n  /virtualenv\\//,\n  /\\.tox\\//,\n  /\\.eggs\\//,\n  /\\.egg-info\\//,\n  /htmlcov\\//,\n  /coverage\\//,\n  /\\.coverage/,\n  /\\.cache\\//,\n  /\\.temp\\//,\n  /\\.tmp\\//,\n  /target\\//,\n  /vendor\\//,\n  /\\.idea\\//,\n  /\\.vscode\\//,\n  /\\.DS_Store/,\n  /Thumbs\\.db/,\n  /\\.log$/,\n  /\\.min\\.(js|css)$/,\n  /\\.map$/,\n  /\\.bundle\\.(js|css)$/,\n  /test_.*\\.py$/,\n  /.*_test\\.py$/,\n  /.*\\.test\\.(js|ts|jsx|tsx)$/,\n  /.*\\.spec\\.(js|ts|jsx|tsx)$/,\n  /__tests__\\//,\n  /tests?\\//,\n];\n\n// Приоритетные файлы\nconst priorityPatterns = [\n  /^readme\\.md$/i,\n  /^package\\.json$/,\n  /^requirements\\.txt$/,\n  /^pyproject\\.toml$/,\n  /^main\\.(py|js|ts)$/,\n  /^index\\.(py|js|ts)$/,\n  /^app\\.(py|js|ts)$/,\n  /^server\\.(py|js|ts)$/,\n  /models?\\.py$/,\n  /schema\\.py$/,\n];\n\n// =====================================================\n// ИСПРАВЛЕННАЯ ФИЛЬТРАЦИЯ\n// =====================================================\nconst allFiles = structure.filter(item => {\n  // ИСПРАВЛЕНО: Проверяем 'file', а не 'blob'!\n  if (item.type !== 'file') {\n    return false;\n  }\n  \n  // Ограничение размера (100KB)\n  if (item.size > 100000) {\n    return false;\n  }\n  \n  // Проверяем исключения\n  const isExcluded = excludePatterns.some(p => p.test(item.path));\n  if (isExcluded) {\n    return false;\n  }\n  \n  // Проверяем совпадение с ключевыми паттернами\n  const matchesKey = keyPatterns.some(p => p.test(item.path));\n  return matchesKey;\n});\n\n// Для отладки: если ничего не нашли, покажем почему\nif (allFiles.length === 0) {\n  console.log('=== DEBUGGING: No files matched ===');\n  \n  const filesOnly = structure.filter(i => i.type === 'file');\n  console.log(`Files in structure: ${filesOnly.length}`);\n  \n  if (filesOnly.length > 0) {\n    console.log('Sample files:', filesOnly.slice(0, 10).map(f => ({\n      path: f.path,\n      type: f.type,\n      size: f.size\n    })));\n    \n    // Проверяем каждый файл вручную\n    filesOnly.slice(0, 5).forEach(item => {\n      const excluded = excludePatterns.some(p => p.test(item.path));\n      const matched = keyPatterns.some(p => p.test(item.path));\n      const sizeOk = item.size <= 100000;\n      console.log(`File: ${item.path} | excluded: ${excluded} | matched: ${matched} | sizeOk: ${sizeOk}`);\n    });\n  }\n}\n\n// Сортируем: приоритетные файлы первыми\nconst sortedFiles = allFiles.sort((a, b) => {\n  const aPriority = priorityPatterns.some(p => p.test(a.path)) ? 0 : 1;\n  const bPriority = priorityPatterns.some(p => p.test(b.path)) ? 0 : 1;\n  \n  if (aPriority !== bPriority) {\n    return aPriority - bPriority;\n  }\n  \n  return a.size - b.size;\n});\n\n// Берём топ-50 файлов\nconst filesToFetch = sortedFiles.slice(0, 50);\n\n// Сохраняем SHA для ВСЕХ файлов\nconst existingFileShas = {};\nstructure.forEach(item => {\n  if (item.type === 'file') {\n    existingFileShas[item.path] = item.sha;\n  }\n});\n\n// Итоговый лог\nconsole.log('=== FINAL STATS ===');\nconsole.log(`Total items in structure: ${structure.length}`);\nconsole.log(`Total files: ${structure.filter(i => i.type === 'file').length}`);\nconsole.log(`Files matching patterns: ${allFiles.length}`);\nconsole.log(`Files to fetch: ${filesToFetch.length}`);\nif (filesToFetch.length > 0) {\n  console.log('First 10 files:', filesToFetch.slice(0, 10).map(f => f.path));\n}\n\nreturn [{\n  json: {\n    ...formData,\n    structure: structure,\n    files_to_fetch: filesToFetch,\n    existing_file_shas: existingFileShas,\n    stats: {\n      total_files: structure.filter(i => i.type === 'file').length,\n      matching_files: allFiles.length,\n      files_to_fetch: filesToFetch.length\n    }\n  }\n}];"
+        "jsCode": "const formData = $('📋 Prepare Data').first().json;\nconst treeResponse = $input.first().json;\n\n// Логируем входные данные для отладки\nconsole.log('Tree response keys:', Object.keys(treeResponse));\nconsole.log('Tree array length:', (treeResponse.tree || []).length);\nconsole.log('First 3 items:', JSON.stringify((treeResponse.tree || []).slice(0, 3), null, 2));\n\n// Парсим структуру репозитория\nconst structure = (treeResponse.tree || []).map(item => ({\n  path: item.path,\n  type: item.type === 'blob' ? 'file' : 'dir',\n  originalType: item.type,\n  size: item.size || 0,\n  sha: item.sha\n}));\n\n// РАСШИРЕННЫЕ паттерны для ключевых файлов\nconst keyPatterns = [\n  /^readme\\.md$/i,\n  /^changelog\\.md$/i,\n  /^contributing\\.md$/i,\n  /^package\\.json$/,\n  /^package-lock\\.json$/,\n  /^requirements\\.txt$/,\n  /^pyproject\\.toml$/,\n  /^setup\\.py$/,\n  /^setup\\.cfg$/,\n  /^poetry\\.lock$/,\n  /^Pipfile$/,\n  /^docker-compose\\.ya?ml$/,\n  /^Dockerfile$/i,\n  /^dockerfile$/i,\n  /^\\.env\\.example$/,\n  /^\\.env\\.sample$/,\n  /^tsconfig\\.json$/,\n  /^vite\\.config\\.(js|ts)$/,\n  /^webpack\\.config\\.js$/,\n  /^next\\.config\\.(js|mjs)$/,\n  /^nuxt\\.config\\.(js|ts)$/,\n  /^\\.eslintrc(\\.(js|json|yml))?$/,\n  /^\\.prettierrc(\\.(js|json|yml))?$/,\n  /^tailwind\\.config\\.(js|ts)$/,\n  /^cargo\\.toml$/i,\n  /^go\\.mod$/,\n  /^go\\.sum$/,\n  /^makefile$/i,\n  /^justfile$/i,\n  /^main\\.(py|js|ts|go|rs)$/,\n  /^index\\.(py|js|ts|tsx|jsx)$/,\n  /^app\\.(py|js|ts|tsx|jsx)$/,\n  /^server\\.(py|js|ts)$/,\n  /^run\\.(py|js|ts)$/,\n  /^cli\\.(py|js|ts)$/,\n  /\\.py$/,\n  /^src\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^lib\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^app\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^pages\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^components\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^hooks\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^utils\\/.*\\.(js|ts)$/,\n  /^helpers\\/.*\\.(js|ts)$/,\n  /^services\\/.*\\.(js|ts)$/,\n  /^api\\/.*\\.(js|ts)$/,\n  /^routes?\\/.*\\.(js|ts)$/,\n  /^controllers?\\/.*\\.(js|ts)$/,\n  /^middleware\\/.*\\.(js|ts)$/,\n  /^models?\\/.*\\.(js|ts)$/,\n  /^schemas?\\/.*\\.(js|ts)$/,\n  /^types?\\/.*\\.(ts|d\\.ts)$/,\n  /^store\\/.*\\.(js|ts)$/,\n  /^config\\/.*\\.(js|ts|json)$/,\n  /\\.go$/,\n  /\\.rs$/,\n  /\\.cpp$/,\n  /\\.cxx$/,\n  /\\.c$/,\n  /\\.java$/,\n  /build\\.gradle\\.kts$/,\n  /pom\\.xml$/,\n  /config\\/.*\\.(json|ya?ml|toml)$/,\n  /\\.github\\/workflows\\/.*\\.ya?ml$/\n];\n\n// Паттерны для ИСКЛЮЧЕНИЯ\nconst excludePatterns = [\n  /node_modules\\//,\n  /\\.git\\//,\n  /dist\\//,\n  /build\\//,\n  /\\.next\\//,\n  /\\.nuxt\\//,\n  /out\\//,\n  /__pycache__\\//,\n  /\\.pytest_cache\\//,\n  /\\.mypy_cache\\//,\n  /\\.ruff_cache\\//,\n  /\\.venv\\//,\n  /venv\\//,\n  /\\.env\\//,\n  /env\\//,\n  /virtualenv\\//,\n  /\\.tox\\//,\n  /\\.eggs\\//,\n  /\\.egg-info\\//,\n  /htmlcov\\//,\n  /coverage\\//,\n  /\\.coverage/,\n  /\\.cache\\//,\n  /\\.temp\\//,\n  /\\.tmp\\//,\n  /target\\//,\n  /vendor\\//,\n  /\\.idea\\//,\n  /\\.vscode\\//,\n  /\\.DS_Store/,\n  /Thumbs\\.db/,\n  /\\.log$/,\n  /\\.min\\.(js|css)$/,\n  /\\.map$/,\n  /\\.bundle\\.(js|css)$/,\n  /test_.*\\.py$/,\n  /.*_test\\.py$/,\n  /.*\\.test\\.(js|ts|jsx|tsx)$/,\n  /.*\\.spec\\.(js|ts|jsx|tsx)$/,\n  /__tests__\\//,\n  /tests?\\//\n];\n\n// Приоритетные файлы\nconst priorityPatterns = [\n  /^readme\\.md$/i,\n  /^package\\.json$/,\n  /^requirements\\.txt$/,\n  /^pyproject\\.toml$/,\n  /^main\\.(py|js|ts)$/,\n  /^index\\.(py|js|ts)$/,\n  /^app\\.(py|js|ts)$/,\n  /^server\\.(py|js|ts)$/,\n  /models?\\.py$/,\n  /schema\\.py$/\n];\n\nconst allFiles = structure.filter(item => {\n  if (item.type !== 'file') return false;\n  if (item.size > 100000) return false;\n  const isExcluded = excludePatterns.some(p => p.test(item.path));\n  if (isExcluded) return false;\n  const matchesKey = keyPatterns.some(p => p.test(item.path));\n  return matchesKey;\n});\n\nconst sortedFiles = allFiles.sort((a, b) => {\n  const aPriority = priorityPatterns.some(p => p.test(a.path)) ? 0 : 1;\n  const bPriority = priorityPatterns.some(p => p.test(b.path)) ? 0 : 1;\n  if (aPriority !== bPriority) return aPriority - bPriority;\n  return a.size - b.size;\n});\n\nconst filesToFetch = sortedFiles.slice(0, 50);\n\n// Сохраняем SHA для ВСЕХ файлов\nconst existingFileShas = {};\nstructure.forEach(item => {\n  if (item.type === 'file') {\n    existingFileShas[item.path] = item.sha;\n  }\n});\n\nconsole.log('=== FINAL STATS ===');\nconsole.log(`Total items in structure: ${structure.length}`);\nconsole.log(`Total files: ${structure.filter(i => i.type === 'file').length}`);\nconsole.log(`Files matching patterns: ${allFiles.length}`);\nconsole.log(`Files to fetch: ${filesToFetch.length}`);\n\nreturn [{\n  json: {\n    ...formData,\n    structure: structure,\n    files_to_fetch: filesToFetch,\n    existing_file_shas: existingFileShas,\n    stats: {\n      total_files: structure.filter(i => i.type === 'file').length,\n      matching_files: allFiles.length,\n      files_to_fetch: filesToFetch.length\n    }\n  }\n}];"
       },
       "id": "49d290ae-d35b-4c43-850e-ae2072297e4f",
       "name": "🔍 Analyze Structure",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -2864,
-        128
-      ]
+      "position": [-2864, 128]
     },
     {
       "parameters": {
@@ -100,10 +91,7 @@
       "name": "📄 Split Files",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -2640,
-        128
-      ]
+      "position": [-2640, 128]
     },
     {
       "parameters": {
@@ -113,8 +101,7 @@
         "options": {
           "batching": {
             "batch": {
-              "batchSize": 5,
-              "batchInterval": 300
+              "batchSize": 1
             }
           },
           "timeout": 20000
@@ -124,10 +111,7 @@
       "name": "📥 Fetch Contents",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        -2416,
-        128
-      ],
+      "position": [-2416, 128],
       "credentials": {
         "githubApi": {
           "id": "EuDjNHcUwsanYUOc",
@@ -138,16 +122,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst firstItem = $('🔍 Analyze Structure').first().json;\n\nconst keyFiles = {};\nlet loaded = 0, failed = 0;\n\nitems.forEach(item => {\n  if (item.json.skip_fetch) return;\n  try {\n    const content = item.json.content;\n    const path = item.json.path || item.json.name;\n    if (content && path) {\n      keyFiles[path] = Buffer.from(content, 'base64').toString('utf-8');\n      loaded++;\n    }\n  } catch (e) { failed++; }\n});\n\nreturn [{\n  json: {\n    task_description: firstItem.task_description,\n    repo_owner: firstItem.repo_owner,\n    repo_name: firstItem.repo_name,\n    base_branch: firstItem.base_branch,\n    existing_file_shas: firstItem.existing_file_shas,  // Передаём дальше\n    repo_context: { structure: firstItem.structure, key_files: keyFiles },\n    files_loaded: loaded\n  }\n}];"
+        "jsCode": "const items = $input.all();\nconst firstItem = $('🔍 Analyze Structure').first().json;\n\nconst keyFiles = {};\nlet loaded = 0, failed = 0;\n\nitems.forEach(item => {\n  if (item.json.skip_fetch) return;\n  try {\n    const content = item.json.content;\n    const path = item.json.path || item.json.name;\n    if (content && path) {\n      keyFiles[path] = Buffer.from(content, 'base64').toString('utf-8');\n      loaded++;\n    }\n  } catch (e) { failed++; }\n});\n\nreturn [{\n  json: {\n    task_description: firstItem.task_description,\n    repo_owner: firstItem.repo_owner,\n    repo_name: firstItem.repo_name,\n    base_branch: firstItem.base_branch,\n    existing_file_shas: firstItem.existing_file_shas,\n    repo_context: { structure: firstItem.structure, key_files: keyFiles },\n    files_loaded: loaded\n  }\n}];"
       },
       "id": "dffe7ccc-b02d-42bb-8b2e-6a1cc08bee25",
       "name": "📦 Aggregate Contents",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -2208,
-        128
-      ]
+      "position": [-2208, 128]
     },
     {
       "parameters": {
@@ -164,268 +145,17 @@
       "name": "🤖 Call Project Manager",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        -1984,
-        128
-      ]
+      "position": [-1984, 128]
     },
     {
       "parameters": {
-        "jsCode": "const aggregateData = $('📦 Aggregate Contents').first().json;\nconst pmResponse = $input.first().json;\n\n// ПРОВЕРКА СТАТУСА\nif (pmResponse.status === 'failed') {\n  // Собираем ошибки для отчёта\n  const errors = pmResponse.errors || [];\n  const agentResults = pmResponse.agent_results || {};\n  \n  let errorDetails = 'Pipeline failed:\\n';\n  \n  // Проверяем каждого агента\n  if (agentResults.code_writer) {\n    const cw = agentResults.code_writer;\n    if (!cw.files || cw.files.length === 0) {\n      errorDetails += '❌ Code Writer: No files generated\\n';\n      if (cw.implementation_notes) {\n        errorDetails += `   Notes: ${cw.implementation_notes.join(', ')}\\n`;\n      }\n    }\n  }\n  \n  errors.forEach(e => {\n    errorDetails += `❌ ${e.step}: ${e.error}\\n`;\n  });\n  \n  throw new Error(errorDetails);\n}\n\n// Проверяем файлы\nconst files = pmResponse.files_to_create || [];\nif (files.length === 0) {\n  throw new Error('No files to create! Check agent_results for details.');\n}\n\nreturn [{\n  json: {\n    ...pmResponse,\n    repo_owner: aggregateData.repo_owner,\n    repo_name: aggregateData.repo_name,\n    base_branch: aggregateData.base_branch,\n    existing_file_shas: aggregateData.existing_file_shas  // Для UPDATE\n  }\n}];"
+        "jsCode": "const aggregateData = $('📦 Aggregate Contents').first().json;\nconst pmResponse = $input.first().json;\n\nif (pmResponse.status === 'failed') {\n  const errors = pmResponse.errors || [];\n  const agentResults = pmResponse.agent_results || {};\n  \n  let errorDetails = 'Pipeline failed:\\n';\n  \n  if (agentResults.code_writer) {\n    const cw = agentResults.code_writer;\n    if (!cw.files || cw.files.length === 0) {\n      errorDetails += '❌ Code Writer: No files generated\\n';\n      if (cw.implementation_notes) {\n        errorDetails += `   Notes: ${cw.implementation_notes.join(', ')}\\n`;\n      }\n    }\n  }\n  \n  errors.forEach(e => {\n    errorDetails += `❌ ${e.step}: ${e.error}\\n`;\n  });\n}\n\nconst files = pmResponse.files_to_create || [];\nif (files.length === 0) {\n  $input.first().json.status = 'failed';\n}\n\nreturn [{\n  json: {\n    ...pmResponse,\n    repo_owner: aggregateData.repo_owner,\n    repo_name: aggregateData.repo_name,\n    base_branch: aggregateData.base_branch,\n    existing_file_shas: aggregateData.existing_file_shas\n  }\n}];"
       },
       "id": "91cae53b-980b-4c1a-959b-62e83bd07bab",
       "name": "✅ Check PM Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -1760,
-        128
-      ]
-    },
-    {
-      "parameters": {
-        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/git/refs/heads/{{ $json.base_branch }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "githubApi",
-        "options": {}
-      },
-      "id": "9fab2454-8694-456c-abbf-50e7998d5c07",
-      "name": "🔗 Get Base SHA",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -1296,
-        0
-      ],
-      "credentials": {
-        "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
-          "name": "GitHub account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const pmData = $('✅ Check PM Response').first().json;\nconst shaResponse = $input.first().json;\n\nreturn [{ json: { ...pmData, base_sha: shaResponse.object.sha } }];"
-      },
-      "id": "ef7670a1-7bab-40a3-a085-ebc75170c948",
-      "name": "Extract SHA",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -1088,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/git/refs",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "githubApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ ref: 'refs/heads/' + $json.branch_name, sha: $json.base_sha }) }}",
-        "options": {}
-      },
-      "id": "49242abe-b468-439e-a808-192101f44c0d",
-      "name": "🌿 Create Branch",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -864,
-        0
-      ],
-      "credentials": {
-        "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
-          "name": "GitHub account"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const data = $('Extract SHA').first().json;\nconst files = data.files_to_create || [];\nconst existingShas = data.existing_file_shas || {};\n\nif (files.length === 0) {\n  throw new Error('No files to create!');\n}\n\nreturn files.map((file, index) => {\n  const contentBase64 = Buffer.from(file.content || '').toString('base64');\n  const action = file.action || 'create';\n  const existingSha = existingShas[file.path];  // SHA для update\n  \n  return {\n    json: {\n      repo_owner: data.repo_owner,\n      repo_name: data.repo_name,\n      branch_name: data.branch_name,\n      commit_message: data.commit_message,\n      file_path: file.path,\n      file_content_base64: contentBase64,\n      file_action: action,\n      file_sha: action === 'update' && existingSha ? existingSha : null,  // SHA для update!\n      file_index: index,\n      total_files: files.length,\n      source_agent: file.source_agent || 'unknown',\n      // Для PR\n      pr_title: data.pr_title,\n      pr_description: data.pr_description,\n      summary: data.summary,\n      base_branch: data.base_branch,\n      task_id: data.task_id,\n      tech_stack: data.tech_stack,\n      review_iterations: data.review_iterations,\n      agent_results: data.agent_results\n    }\n  };\n});"
-      },
-      "id": "e71e1f4c-bb73-4572-9a5d-47672a784c06",
-      "name": "📝 Split Files to Create",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -640,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/contents/{{ $json.file_path }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "githubApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ (() => {\n  const body = {\n    message: $json.commit_message + ' [' + $json.file_path.split('/').pop() + ']',\n    content: $json.file_content_base64,\n    branch: $json.branch_name\n  };\n  // ВАЖНО: добавляем SHA для update\n  if ($json.file_sha) {\n    body.sha = $json.file_sha;\n  }\n  return JSON.stringify(body);\n})() }}",
-        "options": {
-          "batching": {
-            "batch": {
-              "batchSize": 1
-            }
-          },
-          "timeout": 30000
-        }
-      },
-      "id": "4a9a45f1-15cc-49a8-a7ba-924c50e4bcc9",
-      "name": "💾 Create/Update Files",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -416,
-        0
-      ],
-      "credentials": {
-        "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
-          "name": "GitHub account"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst firstItem = $('📝 Split Files to Create').first().json;\n\nlet success = 0, failed = 0;\nconst results = [];\nconst failedFiles = [];\n\nitems.forEach((item, idx) => {\n  const resp = item.json;\n  if (resp.content && resp.commit) {\n    success++;\n    results.push({ path: resp.content.path, status: 'success' });\n  } else {\n    failed++;\n    const errMsg = resp.message || 'Unknown error';\n    results.push({ path: `file_${idx}`, status: 'failed', error: errMsg });\n    failedFiles.push({ index: idx, error: errMsg });\n  }\n});\n\nreturn [{\n  json: {\n    ...firstItem,\n    files_created: success,\n    files_failed: failed,\n    results: results,\n    failed_files: failedFiles\n  }\n}];"
-      },
-      "id": "fe59a79e-66e1-479f-93f5-59660ac6f011",
-      "name": "📊 Aggregate Results",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -208,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/pulls",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "githubApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ title: $json.pr_title, head: $json.branch_name, base: $json.base_branch, body: $json.pr_description }) }}",
-        "options": {}
-      },
-      "id": "3c5c1185-072e-4674-b672-ba50e1e34930",
-      "name": "🔀 Create PR",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        0,
-        0
-      ],
-      "credentials": {
-        "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
-          "name": "GitHub account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const data = $('📊 Aggregate Results').first().json;\nconst pr = $input.first().json;\n\n// Детальный отчёт\nlet msg = `✅ *Задача выполнена!*\\n\\n`;\nmsg += `📋 ${data.summary?.split('\\n')[0]?.substring(0, 80) || 'Готово'}\\n\\n`;\n\n// Технологии\nmsg += `🔧 *Стек:* ${data.tech_stack?.primary_language || 'N/A'}\\n`;\nif (data.tech_stack?.frameworks?.length) {\n  msg += `📦 *Фреймворки:* ${data.tech_stack.frameworks.slice(0,3).join(', ')}\\n`;\n}\n\n// Статистика\nmsg += `\\n📊 *Статистика:*\\n`;\nmsg += `• Файлов создано: ${data.files_created}/${data.total_files}\\n`;\nmsg += `• Review итераций: ${data.review_iterations || 0}\\n`;\n\n// Агенты\nconst agents = data.agent_results || {};\nmsg += `\\n🤖 *Агенты:*\\n`;\nif (agents.architect?.components) {\n  msg += `• Architect: ${agents.architect.components.length} компонентов\\n`;\n}\nif (agents.code_writer?.files) {\n  msg += `• Code Writer: ${agents.code_writer.files.length} файлов\\n`;\n}\nif (agents.code_reviewer?.result) {\n  const score = agents.code_reviewer.result.quality_score || 0;\n  msg += `• Code Reviewer: ${score}/10 баллов\\n`;\n}\nif (agents.documentation?.files) {\n  msg += `• Documentation: ${agents.documentation.files.length} файлов\\n`;\n}\n\n// PR\nmsg += `\\n🔗 [Pull Request #${pr.number}](${pr.html_url})`;\n\nreturn [{ json: { message: msg, pr_url: pr.html_url, success: true } }];"
-      },
-      "id": "94317f15-e881-4b9d-a614-a356352c3257",
-      "name": "📱 Success Message",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        224,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const data = $('📊 Aggregate Results').first().json;\n\n// Детальный отчёт об ошибках\nlet msg = `❌ *Ошибка создания файлов!*\\n\\n`;\nmsg += `📋 ${data.summary?.split('\\n')[0]?.substring(0, 60) || 'N/A'}\\n\\n`;\n\nmsg += `📊 *Статистика:*\\n`;\nmsg += `• Успешно: ${data.files_created}\\n`;\nmsg += `• Ошибок: ${data.files_failed}\\n\\n`;\n\n// Детали ошибок\nconst failures = (data.failed_files || []).slice(0, 5);\nif (failures.length > 0) {\n  msg += `🔍 *Ошибки:*\\n`;\n  failures.forEach(f => {\n    msg += `• ${f.error?.substring(0, 100)}\\n`;\n  });\n}\n\n// Информация от агентов\nconst agents = data.agent_results || {};\nmsg += `\\n🤖 *Результаты агентов:*\\n`;\n\nif (agents.code_writer) {\n  const cw = agents.code_writer;\n  if (!cw.files || cw.files.length === 0) {\n    msg += `• ❌ Code Writer: НЕ СОЗДАЛ ФАЙЛЫ\\n`;\n    if (cw.implementation_notes?.length) {\n      msg += `  Notes: ${cw.implementation_notes[0]}\\n`;\n    }\n  } else {\n    msg += `• ✅ Code Writer: ${cw.files.length} файлов\\n`;\n  }\n}\n\nif (agents.code_reviewer === null) {\n  msg += `• ⚠️ Code Reviewer: не выполнен\\n`;\n}\n\nreturn [{ json: { message: msg, success: false } }];"
-      },
-      "id": "5bdae692-1f23-48cc-90a2-2dd2617a077d",
-      "name": "📱 Error Message",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -1296,
-        256
-      ]
-    },
-    {
-      "parameters": {
-        "chatId": "=6487984216",
-        "text": "={{ $json.message }}",
-        "additionalFields": {
-          "disable_web_page_preview": true,
-          "parse_mode": "Markdown"
-        }
-      },
-      "id": "59690877-9b6e-4bb5-80c9-4d782b4121b5",
-      "name": "📤 Send Success",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        448,
-        0
-      ],
-      "webhookId": "81f8a274-1f68-43f3-bc63-0fed2218eaca",
-      "credentials": {
-        "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "chatId": "=6487984216",
-        "text": "={{ $json.message }}",
-        "additionalFields": {
-          "parse_mode": "Markdown"
-        }
-      },
-      "id": "652d5753-5f49-4deb-a57f-e46851c201f8",
-      "name": "📤 Send Error",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        -1088,
-        256
-      ],
-      "webhookId": "30c6d8d9-8828-4d7a-a5d3-20a549a9c268",
-      "credentials": {
-        "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {},
-      "id": "0652bc74-a6b8-4f5a-bab0-e424bab4e3ba",
-      "name": "✅ End",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        640,
-        0
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "f9a8c961-9477-464e-a5cc-83f682238639",
-      "name": "❌ End",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        -864,
-        256
-      ]
+      "position": [-1760, 128]
     },
     {
       "parameters": {
@@ -467,10 +197,396 @@
       "name": "🔀 Is Success?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [
-        -1552,
-        128
-      ]
+      "position": [-1552, 128]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/git/refs/heads/{{ $json.base_branch }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "id": "9fab2454-8694-456c-abbf-50e7998d5c07",
+      "name": "🔗 Get Base SHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1296, 0],
+      "credentials": {
+        "githubApi": {
+          "id": "EuDjNHcUwsanYUOc",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const pmData = $('✅ Check PM Response').first().json;\nconst shaResponse = $input.first().json;\n\nreturn [{ json: { ...pmData, base_sha: shaResponse.object.sha } }];"
+      },
+      "id": "ef7670a1-7bab-40a3-a085-ebc75170c948",
+      "name": "Extract SHA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1088, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/git/refs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ref: 'refs/heads/' + $json.branch_name, sha: $json.base_sha }) }}",
+        "options": {}
+      },
+      "id": "49242abe-b468-439e-a808-192101f44c0d",
+      "name": "🌿 Create Branch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-864, 0],
+      "credentials": {
+        "githubApi": {
+          "id": "EuDjNHcUwsanYUOc",
+          "name": "GitHub account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// 🔧 ИНИЦИАЛИЗАЦИЯ RETRY LOOP\n// =====================================================\nconst data = $('Extract SHA').first().json;\nconst files = data.files_to_create || [];\nconst existingShas = data.existing_file_shas || {};\n\nif (files.length === 0) {\n  throw new Error('No files to create!');\n}\n\n// Инициализируем структуру для retry\nconst filesToProcess = files.map((file, index) => {\n  const existingSha = existingShas[file.path];\n  return {\n    path: file.path,\n    content: file.content || '',\n    action: file.action || 'create',\n    source_agent: file.source_agent || 'unknown',\n    existing_sha: existingSha || null,\n    status: 'pending',  // pending, success, failed\n    attempts: 0,\n    last_error: null\n  };\n});\n\nreturn [{\n  json: {\n    repo_owner: data.repo_owner,\n    repo_name: data.repo_name,\n    branch_name: data.branch_name,\n    base_branch: data.base_branch,\n    commit_message: data.commit_message,\n    pr_title: data.pr_title,\n    pr_description: data.pr_description,\n    summary: data.summary,\n    task_id: data.task_id,\n    tech_stack: data.tech_stack,\n    review_iterations: data.review_iterations,\n    agent_results: data.agent_results,\n    // Retry state\n    files_to_process: filesToProcess,\n    created_files: [],  // Успешно созданные\n    failed_files: [],   // Окончательно failed\n    current_attempt: 1,\n    max_attempts: 3\n  }\n}];"
+      },
+      "id": "init-retry-loop",
+      "name": "🔄 Init Retry Loop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-640, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// 📄 SPLIT: Получаем pending файлы для обработки\n// =====================================================\nconst data = $input.first().json;\nconst pendingFiles = data.files_to_process.filter(f => f.status === 'pending');\n\nconsole.log(`Attempt ${data.current_attempt}/${data.max_attempts}: ${pendingFiles.length} files to process`);\n\nif (pendingFiles.length === 0) {\n  // Все файлы обработаны - идём дальше\n  return [{ json: { ...data, all_processed: true } }];\n}\n\n// Разбиваем на отдельные items для параллельной обработки\nreturn pendingFiles.map(file => ({\n  json: {\n    ...data,\n    current_file: file,\n    all_processed: false\n  }\n}));"
+      },
+      "id": "split-pending-files",
+      "name": "📄 Split Pending Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-416, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-all-processed",
+              "leftValue": "={{ $json.all_processed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-all-done",
+      "name": "🔀 All Processed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-192, 0]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/contents/{{ $json.current_file.path }}?ref={{ $json.branch_name }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "get-file-sha",
+      "name": "🔍 Get File SHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [32, -128],
+      "credentials": {
+        "githubApi": {
+          "id": "EuDjNHcUwsanYUOc",
+          "name": "GitHub account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// 📝 PREPARE: Подготавливаем данные для PUT\n// =====================================================\nconst data = $input.first().json;\nconst file = data.current_file;\n\n// Проверяем, получили ли мы SHA (файл существует)\nlet fileSha = null;\nif (data.sha) {\n  // Файл существует на ветке - нужен SHA для update\n  fileSha = data.sha;\n  console.log(`File exists: ${file.path}, SHA: ${fileSha}`);\n} else if (file.existing_sha) {\n  // Файл существует в base branch\n  fileSha = file.existing_sha;\n  console.log(`Using existing SHA for ${file.path}: ${fileSha}`);\n} else {\n  console.log(`New file: ${file.path}`);\n}\n\nconst contentBase64 = Buffer.from(file.content).toString('base64');\n\nreturn [{\n  json: {\n    repo_owner: data.repo_owner,\n    repo_name: data.repo_name,\n    branch_name: data.branch_name,\n    base_branch: data.base_branch,\n    commit_message: data.commit_message,\n    pr_title: data.pr_title,\n    pr_description: data.pr_description,\n    summary: data.summary,\n    task_id: data.task_id,\n    tech_stack: data.tech_stack,\n    review_iterations: data.review_iterations,\n    agent_results: data.agent_results,\n    files_to_process: data.files_to_process,\n    created_files: data.created_files,\n    failed_files: data.failed_files,\n    current_attempt: data.current_attempt,\n    max_attempts: data.max_attempts,\n    // Данные для PUT\n    current_file: {\n      ...file,\n      resolved_sha: fileSha\n    },\n    file_path: file.path,\n    file_content_base64: contentBase64,\n    file_sha: fileSha\n  }\n}];"
+      },
+      "id": "prepare-put-data",
+      "name": "📝 Prepare PUT Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [256, -128]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/contents/{{ $json.file_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => {\n  const body = {\n    message: $json.commit_message + ' [' + $json.file_path.split('/').pop() + ']',\n    content: $json.file_content_base64,\n    branch: $json.branch_name\n  };\n  if ($json.file_sha) {\n    body.sha = $json.file_sha;\n  }\n  return JSON.stringify(body);\n})() }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "create-update-file",
+      "name": "💾 Create/Update File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, -128],
+      "credentials": {
+        "githubApi": {
+          "id": "EuDjNHcUwsanYUOc",
+          "name": "GitHub account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// 📊 PROCESS RESULT: Обрабатываем результат PUT\n// =====================================================\nconst items = $input.all();\nconst firstData = $('📄 Split Pending Files').first().json;\n\n// Собираем результаты\nconst results = items.map(item => {\n  const data = item.json;\n  const file = data.current_file;\n  const path = file?.path || data.file_path;\n  \n  // Проверяем успех\n  if (data.content && data.commit) {\n    return { path, status: 'success', sha: data.content.sha };\n  } else {\n    const error = data.message || data.error || 'Unknown error';\n    return { path, status: 'failed', error };\n  }\n});\n\n// Обновляем состояние файлов\nconst updatedFiles = firstData.files_to_process.map(f => {\n  const result = results.find(r => r.path === f.path);\n  if (result) {\n    if (result.status === 'success') {\n      return { ...f, status: 'success', new_sha: result.sha };\n    } else {\n      return { \n        ...f, \n        attempts: f.attempts + 1,\n        last_error: result.error,\n        status: f.attempts + 1 >= firstData.max_attempts ? 'failed' : 'pending'\n      };\n    }\n  }\n  return f;\n});\n\n// Подсчитываем статистику\nconst successCount = updatedFiles.filter(f => f.status === 'success').length;\nconst pendingCount = updatedFiles.filter(f => f.status === 'pending').length;\nconst failedCount = updatedFiles.filter(f => f.status === 'failed').length;\n\nconsole.log(`After attempt ${firstData.current_attempt}: success=${successCount}, pending=${pendingCount}, failed=${failedCount}`);\n\n// Если есть pending файлы и не превысили лимит попыток - продолжаем\nconst needRetry = pendingCount > 0 && firstData.current_attempt < firstData.max_attempts;\n\nreturn [{\n  json: {\n    repo_owner: firstData.repo_owner,\n    repo_name: firstData.repo_name,\n    branch_name: firstData.branch_name,\n    base_branch: firstData.base_branch,\n    commit_message: firstData.commit_message,\n    pr_title: firstData.pr_title,\n    pr_description: firstData.pr_description,\n    summary: firstData.summary,\n    task_id: firstData.task_id,\n    tech_stack: firstData.tech_stack,\n    review_iterations: firstData.review_iterations,\n    agent_results: firstData.agent_results,\n    files_to_process: updatedFiles,\n    current_attempt: firstData.current_attempt + 1,\n    max_attempts: firstData.max_attempts,\n    // Статистика\n    success_count: successCount,\n    pending_count: pendingCount,\n    failed_count: failedCount,\n    need_retry: needRetry,\n    all_done: !needRetry\n  }\n}];"
+      },
+      "id": "process-results",
+      "name": "📊 Process Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [704, -128]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "need-retry",
+              "leftValue": "={{ $json.need_retry }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-need-retry",
+      "name": "🔀 Need Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [928, -128]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ⏳ WAIT: Небольшая задержка перед retry\n// =====================================================\nconst data = $input.first().json;\n\nconsole.log(`Waiting before retry attempt ${data.current_attempt}...`);\n\n// Просто пробрасываем данные дальше\nreturn [{ json: data }];"
+      },
+      "id": "wait-before-retry",
+      "name": "⏳ Wait & Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1152, -256]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ✅ FINALIZE: Финальная проверка результатов\n// =====================================================\nconst data = $input.first().json;\nconst files = data.files_to_process || [];\n\nconst successFiles = files.filter(f => f.status === 'success');\nconst failedFiles = files.filter(f => f.status === 'failed');\n\nconsole.log(`Final: ${successFiles.length} success, ${failedFiles.length} failed`);\n\n// Если есть failed файлы - это ошибка\nconst hasErrors = failedFiles.length > 0;\n\nreturn [{\n  json: {\n    ...data,\n    files_created: successFiles.length,\n    files_failed: failedFiles.length,\n    success_files: successFiles.map(f => f.path),\n    failed_files_details: failedFiles.map(f => ({\n      path: f.path,\n      error: f.last_error,\n      attempts: f.attempts\n    })),\n    has_errors: hasErrors,\n    can_create_pr: successFiles.length > 0  // PR можно создать если хоть что-то создалось\n  }\n}];"
+      },
+      "id": "finalize-results",
+      "name": "✅ Finalize Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1152, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "can-pr",
+              "leftValue": "={{ $json.can_create_pr }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-can-pr",
+      "name": "🔀 Can Create PR?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1376, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repo_owner }}/{{ $json.repo_name }}/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $json.pr_title, head: $json.branch_name, base: $json.base_branch, body: $json.pr_description }) }}",
+        "options": {}
+      },
+      "id": "create-pr",
+      "name": "🔀 Create PR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, -128],
+      "credentials": {
+        "githubApi": {
+          "id": "EuDjNHcUwsanYUOc",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('✅ Finalize Results').first().json;\nconst pr = $input.first().json;\n\nlet msg = `✅ *Задача выполнена!*\\n\\n`;\nmsg += `${data.summary}\\n\\n`;\n\n// Файлы\nmsg += `📁 *Файлы:*\\n`;\nmsg += `• Создано: ${data.files_created}\\n`;\nif (data.files_failed > 0) {\n  msg += `• ⚠️ Ошибки: ${data.files_failed}\\n`;\n  data.failed_files_details.forEach(f => {\n    msg += `  - ${f.path}: ${f.error} (${f.attempts} попыток)\\n`;\n  });\n}\n\n// Агенты\nconst agents = data.agent_results || {};\nmsg += `\\n🤖 *Агенты:*\\n`;\nif (agents.architect?.components) {\n  msg += `• Architect: ${agents.architect.components.length} компонентов\\n`;\n}\nif (agents.code_writer?.files) {\n  msg += `• Code Writer: ${agents.code_writer.files.length} файлов\\n`;\n}\nif (agents.code_reviewer?.result) {\n  const score = agents.code_reviewer.result.quality_score || 0;\n  msg += `• Code Reviewer: ${score}/10 баллов\\n`;\n}\nif (agents.documentation?.files) {\n  msg += `• Documentation: ${agents.documentation.files.length} файлов\\n`;\n}\n\nmsg += `\\n🔗 [Pull Request #${pr.number}](${pr.html_url})`;\n\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "success-message",
+      "name": "📱 Success Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1824, -128]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nlet msg = `❌ *Ошибка создания файлов*\\n\\n`;\nmsg += `Не удалось создать ни одного файла после ${data.max_attempts} попыток.\\n\\n`;\n\nmsg += `📁 *Проблемные файлы:*\\n`;\ndata.failed_files_details.forEach(f => {\n  msg += `• \\`${f.path}\\`\\n`;\n  msg += `  Ошибка: ${f.error}\\n`;\n  msg += `  Попыток: ${f.attempts}\\n\\n`;\n});\n\nmsg += `\\n💡 *Возможные причины:*\\n`;\nmsg += `• Файл заблокирован\\n`;\nmsg += `• Проблемы с правами доступа\\n`;\nmsg += `• Rate limit GitHub API\\n`;\n\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "total-failure-message",
+      "name": "📱 Total Failure Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 128]
+    },
+    {
+      "parameters": {
+        "chatId": "=6487984216",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "disable_web_page_preview": true,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-success",
+      "name": "📤 Send Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2048, -128],
+      "credentials": {
+        "telegramApi": {
+          "id": "kakDfZD7GZ0uQLva",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "=6487984216",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-failure",
+      "name": "📤 Send Failure",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1824, 128],
+      "credentials": {
+        "telegramApi": {
+          "id": "kakDfZD7GZ0uQLva",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('✅ Check PM Response').first().json;\n\nlet msg = `❌ *Pipeline Failed*\\n\\n`;\nmsg += `${data.summary || 'No summary available'}\\n\\n`;\n\nif (data.errors) {\n  msg += `*Ошибки:*\\n`;\n  data.errors.forEach(e => {\n    msg += `• ${e.step}: ${e.error}\\n`;\n  });\n}\n\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "pm-error-message",
+      "name": "📱 PM Error Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1296, 256]
+    },
+    {
+      "parameters": {
+        "chatId": "=6487984216",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-pm-error",
+      "name": "📤 Send PM Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-1088, 256],
+      "credentials": {
+        "telegramApi": {
+          "id": "kakDfZD7GZ0uQLva",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "end-success",
+      "name": "✅ End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2272, -128]
+    },
+    {
+      "parameters": {},
+      "id": "end-failure",
+      "name": "❌ End Failure",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2048, 128]
+    },
+    {
+      "parameters": {},
+      "id": "end-pm-error",
+      "name": "❌ End PM Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [-864, 256]
     }
   ],
   "pinData": {},
@@ -574,6 +690,24 @@
         ]
       ]
     },
+    "🔀 Is Success?": {
+      "main": [
+        [
+          {
+            "node": "🔗 Get Base SHA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📱 PM Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "🔗 Get Base SHA": {
       "main": [
         [
@@ -600,40 +734,149 @@
       "main": [
         [
           {
-            "node": "📝 Split Files to Create",
+            "node": "🔄 Init Retry Loop",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "📝 Split Files to Create": {
+    "🔄 Init Retry Loop": {
       "main": [
         [
           {
-            "node": "💾 Create/Update Files",
+            "node": "📄 Split Pending Files",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "💾 Create/Update Files": {
+    "📄 Split Pending Files": {
       "main": [
         [
           {
-            "node": "📊 Aggregate Results",
+            "node": "🔀 All Processed?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "📊 Aggregate Results": {
+    "🔀 All Processed?": {
+      "main": [
+        [
+          {
+            "node": "✅ Finalize Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔍 Get File SHA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Get File SHA": {
+      "main": [
+        [
+          {
+            "node": "📝 Prepare PUT Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Prepare PUT Data": {
+      "main": [
+        [
+          {
+            "node": "💾 Create/Update File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💾 Create/Update File": {
+      "main": [
+        [
+          {
+            "node": "📊 Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Process Results": {
+      "main": [
+        [
+          {
+            "node": "🔀 Need Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 Need Retry?": {
+      "main": [
+        [
+          {
+            "node": "⏳ Wait & Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "✅ Finalize Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏳ Wait & Retry": {
+      "main": [
+        [
+          {
+            "node": "📄 Split Pending Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Finalize Results": {
+      "main": [
+        [
+          {
+            "node": "🔀 Can Create PR?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 Can Create PR?": {
       "main": [
         [
           {
             "node": "🔀 Create PR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📱 Total Failure Message",
             "type": "main",
             "index": 0
           }
@@ -662,11 +905,11 @@
         ]
       ]
     },
-    "📱 Error Message": {
+    "📱 Total Failure Message": {
       "main": [
         [
           {
-            "node": "📤 Send Error",
+            "node": "📤 Send Failure",
             "type": "main",
             "index": 0
           }
@@ -677,36 +920,40 @@
       "main": [
         [
           {
-            "node": "✅ End",
+            "node": "✅ End Success",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "📤 Send Error": {
+    "📤 Send Failure": {
       "main": [
         [
           {
-            "node": "❌ End",
+            "node": "❌ End Failure",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "🔀 Is Success?": {
+    "📱 PM Error Message": {
       "main": [
         [
           {
-            "node": "🔗 Get Base SHA",
+            "node": "📤 Send PM Error",
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "📤 Send PM Error": {
+      "main": [
         [
           {
-            "node": "📱 Error Message",
+            "node": "❌ End PM Error",
             "type": "main",
             "index": 0
           }
@@ -718,7 +965,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "2d0ec5fd-5efd-4b64-94db-97ca9ca6a439",
+  "versionId": "v2-retry-logic",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "28f87a46502090a63d81c1b0d194b30cb85aa507eb30004f35c39d5a49ec1f61"
