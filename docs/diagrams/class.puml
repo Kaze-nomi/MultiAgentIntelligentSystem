@@ -1,0 +1,9 @@
+@startuml
+title Music Synthesizer System Class Diagram
+
+class MusicSynthesizerAgent <<module>>
+class MusicFile
+class MusicStyle
+class MusicSynthesizerServer <<module>>
+
+@enduml
