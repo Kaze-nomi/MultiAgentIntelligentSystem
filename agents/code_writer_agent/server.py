@@ -39,22 +39,13 @@ LLM_TIMEOUT = 180
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL")
 
 EXTENSION_TO_LANGUAGE = {
-    "py": CodeLanguage.PYTHON,
-    "js": CodeLanguage.JAVASCRIPT,
-    "jsx": CodeLanguage.JAVASCRIPT,
-    "ts": CodeLanguage.TYPESCRIPT,
-    "tsx": CodeLanguage.TYPESCRIPT,
-    "go": CodeLanguage.GO,
-    "rs": CodeLanguage.RUST,
-    "java": CodeLanguage.JAVA,
-    "html": CodeLanguage.HTML,
-    "css": CodeLanguage.CSS,
-    "sql": CodeLanguage.SQL,
-    "sh": CodeLanguage.SHELL,
-    "yaml": CodeLanguage.YAML,
-    "yml": CodeLanguage.YAML,
-    "json": CodeLanguage.JSON,
-    "md": CodeLanguage.MARKDOWN,
+    "py": "python",
+    "js": "javascript", "jsx": "javascript",
+    "ts": "typescript", "tsx": "typescript",
+    "go": "go", "rs": "rust", "java": "java",
+    "html": "html", "css": "css", "sql": "sql",
+    "sh": "shell", "yaml": "yaml", "yml": "yaml",
+    "json": "json", "md": "markdown",
 }
 
 # ============================================================================
@@ -282,7 +273,7 @@ async def analyze_coding_style(
         lang = detect_language(path)
         if lang not in [CodeLanguage.UNKNOWN, CodeLanguage.MARKDOWN, 
                         CodeLanguage.YAML, CodeLanguage.JSON]:
-            code_samples[path] = content[:1500]
+            code_samples[path] = content[:15000]
     
     if not code_samples:
         return get_default_style(tech_stack.primary_language)
@@ -497,7 +488,7 @@ async def revise_code(
     
     # Форматируем issues
     issues_for_prompt = []
-    for issue in sorted_issues[:15]:  # Берём топ-15
+    for issue in sorted_issues[:50]:  # Берём топ-50
         issues_for_prompt.append({
             "id": issue.get("id", ""),
             "type": issue.get("type", ""),
@@ -548,7 +539,7 @@ async def revise_code(
     if not result or not result.get("files"):
         logger.warning("Revision failed, returning original")
         return {
-            "files": original_files,
+            "files": [f.dict() for f in original_files],
             "implementation_notes": ["Revision parsing failed"],
             "addressed_issues": [],
             "unaddressed_issues": [{"id": "all", "reason": "Parse error"}]
@@ -745,7 +736,7 @@ async def process_code_write(request: CodeWriteRequest):
         return CodeWriteResponse(
             task_id=task_id,
             status=status,
-            files=files,
+            files=[f.dict() for f in files],
             implementation_notes=result.get("implementation_notes", []),
             changes_made=[],
             addressed_issues=result.get("addressed_issues", []),

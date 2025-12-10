@@ -229,7 +229,7 @@ async def analyze_existing_architecture(
 {json.dumps(list(key_files.keys())[:40], indent=2)}
 
 ## СОДЕРЖИМОЕ КЛЮЧЕВЫХ ФАЙЛОВ:
-{json.dumps(key_files, indent=2, ensure_ascii=False)[:12000]}
+{json.dumps(key_files, indent=2, ensure_ascii=False)[:150000]}
 
 ## ОПРЕДЕЛИ:
 
@@ -304,7 +304,7 @@ async def design_components(
 - Соглашения: {json.dumps(existing_arch.conventions, ensure_ascii=False)}
 
 ## СУЩЕСТВУЮЩИЕ КОМПОНЕНТЫ:
-{json.dumps(existing_arch.existing_components[:20], indent=2, ensure_ascii=False)}
+{json.dumps(existing_arch.existing_components[:50], indent=2, ensure_ascii=False)}
 
 ## ТЕХНОЛОГИИ:
 - Язык: {tech_stack.primary_language}
@@ -681,7 +681,7 @@ async def plan_integration(
     """
     
     new_components = [{"name": c.name, "type": c.type.value} for c in components]
-    existing_components = existing_arch.existing_components[:15]
+    existing_components = existing_arch.existing_components[:50]
     
     prompt = f"""
 Спланируй интеграцию новых компонентов с существующим кодом.

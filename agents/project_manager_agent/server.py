@@ -716,12 +716,12 @@ def build_agent_request(
         if source_agent == AgentType.ARCHITECT and context.architecture_result:
             # Architect -> передаём плоскую структуру
             request["data"]["architecture"] = {
-                "components": context.architecture_result.components,
+                "components": [c.dict() if hasattr(c, 'dict') else c for c in context.architecture_result.components],
                 "patterns": context.architecture_result.patterns,
-                "file_structure": context.architecture_result.file_structure,
-                "interfaces": context.architecture_result.interfaces,
+                "file_structure": [f.dict() if hasattr(f, 'dict') else f for f in context.architecture_result.file_structure],
+                "interfaces": [i.dict() if hasattr(i, 'dict') else i for i in context.architecture_result.interfaces],
                 "dependencies": context.architecture_result.dependencies,
-                "integration_points": context.architecture_result.integration_points,
+                "integration_points": [ip.dict() if hasattr(ip, 'dict') else ip for ip in context.architecture_result.integration_points],
                 "diagrams": context.architecture_result.diagrams,
                 "recommendations": context.architecture_result.recommendations
             }
@@ -855,20 +855,19 @@ def update_context_with_result(
             recommendations=result.get("recommendations", [])
         )
         
-    elif agent == AgentType.CODE_WRITER:
-        # Code Writer возвращает files как List[CodeFile]
-        files_raw = result.get("files", [])
-        
-        # Конвертируем в dict если это Pydantic модели
-        files = []
-        for f in files_raw:
-            if hasattr(f, 'dict'):
-                files.append(f.dict())
-            elif isinstance(f, dict):
-                files.append(f)
+    if agent == AgentType.CODE_WRITER:
+        files = result.get("files", [])
+        processed_files = []
+        for f in files:
+            if isinstance(f, dict):
+                processed_files.append(f)
+            elif hasattr(f, 'dict'):  # Pydantic объект
+                processed_files.append(f.dict())
+            else:
+                logger.warning(f"Unknown file format: {type(f)}")
         
         context.code_result = CodeResult(
-            files=files,
+            files=processed_files,
             implementation_notes=result.get("implementation_notes", []),
             changes_made=result.get("changes_made", []),
             addressed_issues=result.get("addressed_issues", []),
@@ -1326,7 +1325,7 @@ async def generate_pr_metadata(context: TaskContext) -> Tuple[str, str]:
 - Итераций ревью: {context.review_iterations}
 
 Файлы:
-{chr(10).join([f.path for f in context.get_all_files()[:15]])}
+{chr(10).join([f.path for f in context.get_all_files()[:50]])}
 
 Верни JSON:
 {{

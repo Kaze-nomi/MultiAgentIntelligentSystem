@@ -645,13 +645,13 @@ async def generate_code_documentation(
     
     # Собираем информацию из кода
     code_info = []
-    for f in code_files[:15]:
+    for f in code_files[:50]:
         code_info.append({
             "path": f.get("path", ""),
             "description": f.get("description", ""),
             "classes": f.get("classes", []),
             "functions": f.get("functions", []),
-            "content_preview": f.get("content", "")[:1500]
+            "content_preview": f.get("content", "")[:15000]
         })
     
     lang_note = "Пиши на русском языке" if doc_style.language == DocLanguage.RUSSIAN else "Write in English"
@@ -744,7 +744,7 @@ async def generate_architecture_documentation(
         Создай документацию архитектуры в Markdown.
 
         КОМПОНЕНТЫ:
-        {json.dumps(components[:15], indent=2, ensure_ascii=False)}
+        {json.dumps(components[:50], indent=2, ensure_ascii=False)}
 
         ПАТТЕРНЫ:
         {json.dumps(patterns, indent=2, ensure_ascii=False)}
@@ -1110,8 +1110,8 @@ async def process_documentation(request: DocumentationRequest):
         # Извлекаем данные с подробным логированием
         code_data = data.get("code", {})
         code_files = code_data.get("files", [])
-        if not code_files:
-            code_files = data.get("files", [])
+        if not code_files and "files" in data:
+            code_files = data["files"]
         
         logger.info(f"[{task_id[:8]}] Code files count: {len(code_files)}")
         

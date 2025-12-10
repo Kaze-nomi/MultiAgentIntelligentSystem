@@ -914,17 +914,13 @@ async def process_code_review(request: CodeReviewRequest):
         
         # Извлекаем данные
         code_data = data.get("code", {})
-        code_files = code_data.get("files", [])
-        
-        if not code_files:
-            # Попробуем другой формат
-            code_files = data.get("files", [])
-        
-        if not code_files:
-            raise HTTPException(
-                status_code=400,
-                detail="No code files provided for review"
-            )
+        code_files = []
+        if "code" in data and "files" in data["code"]:
+            code_files = data["code"]["files"]
+        elif "files" in data:
+            code_files = data["files"]
+        else:
+            raise HTTPException(status_code=400, detail="No code files provided")
         
         architecture = data.get("architecture", {})
         tech_stack_data = data.get("tech_stack", {})
