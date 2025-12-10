@@ -568,6 +568,7 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
    НУЖЕН: всегда после code_writer
 
 4. documentation - Документация
+   - Создаёт документацию
    - Обновляет README
    - Создаёт API документацию
    - Пишет CHANGELOG
@@ -610,7 +611,7 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
             "agent": "documentation",
             "action": "write_docs",
             "description": "Создание документации",
-            "input_from": ["code_writer", "code_reviewer"],
+            "input_from": ["code_writer", "code_reviewer", "architect"],
             "priority": "medium"
         }}
     ],
@@ -675,7 +676,7 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
                 agent=AgentType.DOCUMENTATION,
                 action="write_docs",
                 description="Создание документации",
-                input_from=[AgentType.CODE_WRITER, AgentType.CODE_REVIEWER],
+                input_from=[AgentType.CODE_WRITER, AgentType.CODE_REVIEWER, AgentType.ARCHITECT],
                 priority=TaskPriority.MEDIUM
             )
         ],
@@ -1359,7 +1360,7 @@ async def generate_pr_metadata(context: TaskContext) -> Tuple[str, str]:
 ### Pipeline выполнения
 """
     
-    for log in context.reasoning_log[-10:]:
+    for log in context.reasoning_log[-100:]:
         description += f"- {log['step']}: {log['message']}\n"
     
     return title, description

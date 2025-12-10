@@ -491,7 +491,7 @@ async def revise_code(
     for f in original_files:
         files_for_prompt.append({
             "path": f.get("path", ""),
-            "content": f.get("content", "")[:5000],  # Ограничиваем
+            "content": f.get("content", "")[:50000],  # Ограничиваем
             "language": f.get("language", "")
         })
     
