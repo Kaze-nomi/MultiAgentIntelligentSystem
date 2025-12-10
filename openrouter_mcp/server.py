@@ -151,7 +151,7 @@ async def chat_completion(
             headers=headers,
             json=request_data,
             stream=is_stream,
-            timeout=240
+            timeout=1000
         )
         
         logger.info(f"OpenRouter response status: {response.status_code}")

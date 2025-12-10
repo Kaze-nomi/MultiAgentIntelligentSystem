@@ -107,7 +107,7 @@ class PipelineStep(BaseModel):
     depends_on: List[str] = Field(default_factory=list)
     input_from: List[AgentType] = Field(default_factory=list)
     priority: TaskPriority = TaskPriority.MEDIUM
-    timeout_seconds: int = 180
+    timeout_seconds: int = 3000
     retry_count: int = 0
     max_retries: int = 2
 
