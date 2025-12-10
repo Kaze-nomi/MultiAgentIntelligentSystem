@@ -1,228 +1,179 @@
-// model : tngtech/deepseek-r1t-chimera:free
+# MusicSynthesizerAgent 🥁
 
-// model : deepseek/deepseek-chat-v3-0324
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-org/music-synthesizer-agent/actions)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/your-org/music-synthesizer-agent/releases)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/your-org/music-synthesizer-agent)
 
-//6487984216
+## 📖 Содержание
 
+- [Описание](#описание)
+- [Особенности](#особенности)
+- [Установка](#установка)
+- [Конфигурация](#конфигурация)
+- [Использование](#использование)
+- [API](#api)
+- [Архитектура](#архитектура)
+- [Вклад в разработку](#вклад-в-разработку)
+- [Лицензия](#лицензия)
 
-const formData = $('📋 Prepare Data').first().json;
-const treeResponse = $input.first().json;
+## 📦 Описание
 
-// Парсим структуру репозитория
-const structure = (treeResponse.tree || []).map(item => ({
-  path: item.path,
-  type: item.type === 'blob' ? 'file' : 'dir',
-  size: item.size || 0,
-  sha: item.sha
-}));
+**MusicSynthesizerAgent** — это мощный агент для синтеза музыки в экосистеме агентов. Он генерирует оригинальные музыкальные композиции в различных стилях, сохраняя их как сырые PCM-данные (без WAV-заголовка) в репозитории с поддержкой лимитов на пользователя (максимум 10 файлов, 100 МБ). 
 
-// РАСШИРЕННЫЕ паттерны для ключевых файлов
-const keyPatterns = [
-  // ===== Конфигурационные файлы =====
-  /^readme\.md$/i,
-  /^changelog\.md$/i,
-  /^contributing\.md$/i,
-  /^package\.json$/,
-  /^package-lock\.json$/,
-  /^requirements\.txt$/,
-  /^pyproject\.toml$/,
-  /^setup\.py$/,
-  /^setup\.cfg$/,
-  /^poetry\.lock$/,
-  /^Pipfile$/,
-  /^docker-compose\.ya?ml$/,
-  /^dockerfile$/i,
-  /^\.env\.example$/,
-  /^\.env\.sample$/,
-  /^tsconfig\.json$/,
-  /^vite\.config\.(js|ts)$/,
-  /^webpack\.config\.js$/,
-  /^next\.config\.(js|mjs)$/,
-  /^nuxt\.config\.(js|ts)$/,
-  /^\.eslintrc(\.(js|json|yml))?$/,
-  /^\.prettierrc(\.(js|json|yml))?$/,
-  /^tailwind\.config\.(js|ts)$/,
-  /^cargo\.toml$/i,
-  /^go\.mod$/,
-  /^go\.sum$/,
-  /^makefile$/i,
-  /^justfile$/i,
-  
-  // ===== Точки входа =====
-  /^main\.(py|js|ts|go|rs)$/,
-  /^index\.(py|js|ts|tsx|jsx)$/,
-  /^app\.(py|js|ts|tsx|jsx)$/,
-  /^server\.(py|js|ts)$/,
-  /^run\.(py|js|ts)$/,
-  /^cli\.(py|js|ts)$/,
-  
-  // ===== Python файлы =====
-  /\.py$/,  // Все Python файлы
-  
-  // ===== JavaScript/TypeScript =====
-  /^src\/.*\.(js|jsx|ts|tsx)$/,
-  /^lib\/.*\.(js|jsx|ts|tsx)$/,
-  /^app\/.*\.(js|jsx|ts|tsx)$/,
-  /^pages\/.*\.(js|jsx|ts|tsx)$/,
-  /^components\/.*\.(js|jsx|ts|tsx)$/,
-  /^hooks\/.*\.(js|jsx|ts|tsx)$/,
-  /^utils\/.*\.(js|ts)$/,
-  /^helpers\/.*\.(js|ts)$/,
-  /^services\/.*\.(js|ts)$/,
-  /^api\/.*\.(js|ts)$/,
-  /^routes?\/.*\.(js|ts)$/,
-  /^controllers?\/.*\.(js|ts)$/,
-  /^middleware\/.*\.(js|ts)$/,
-  /^models?\/.*\.(js|ts)$/,
-  /^schemas?\/.*\.(js|ts)$/,
-  /^types?\/.*\.(ts|d\.ts)$/,
-  /^store\/.*\.(js|ts)$/,
-  /^config\/.*\.(js|ts|json)$/,
-  
-  // ===== Go =====
-  /\.go$/,
-  
-  // ===== Rust =====
-  /\.rs$/,
-  
-  // ===== C++ =====
-  /\.cpp$/,  
-  /\.cxx$/,  
-  /\.c$/,  
+Агент использует паттерны **Strategy** (для стратегий синтеза), **Builder** (для построения композиций), **Facade** (для упрощенного интерфейса) и **Repository** (для хранения файлов). Реализован на Python с использованием Pydantic для валидации моделей и Docker для развертывания.
 
-  // ===== Java =====
-  /\.java$/,
-  /\build.gradle.kts$/,
-  /\pom.xml$/,
+Идеален для интеграции в чат-боты, креативные приложения или системы ИИ, где требуется генерация музыки по текстовым описаниям.
 
-  
-  // ===== Конфиги в поддиректориях =====
-  /config\/.*\.(json|ya?ml|toml)$/,
-  /\.github\/workflows\/.*\.ya?ml$/
-];
+## 🚀 Особенности
 
-// Паттерны для ИСКЛЮЧЕНИЯ
-const excludePatterns = [
-  /node_modules\//,
-  /\.git\//,
-  /dist\//,
-  /build\//,
-  /\.next\//,
-  /\.nuxt\//,
-  /out\//,
-  /__pycache__\//,
-  /\.pytest_cache\//,
-  /\.mypy_cache\//,
-  /\.ruff_cache\//,
-  /\.venv\//,
-  /venv\//,
-  /\.env\//,
-  /env\//,
-  /virtualenv\//,
-  /\.tox\//,
-  /\.eggs\//,
-  /\.egg-info\//,
-  /htmlcov\//,
-  /coverage\//,
-  /\.coverage/,
-  /\.cache\//,
-  /\.temp\//,
-  /\.tmp\//,
-  /target\//,  // Rust/Java build
-  /vendor\//,  // Go vendor
-  /\.idea\//,
-  /\.vscode\//,
-  /\.DS_Store/,
-  /Thumbs\.db/,
-  /\.log$/,
-  /\.lock$/,  // Кроме package-lock.json и poetry.lock
-  /\.min\.(js|css)$/,  // Минифицированные файлы
-  /\.map$/,  // Source maps
-  /\.bundle\.(js|css)$/,
-  /test_.*\.py$/,  // Тестовые файлы Python
-  /.*_test\.py$/,
-  /.*\.test\.(js|ts|jsx|tsx)$/,  // Тестовые файлы JS
-  /.*\.spec\.(js|ts|jsx|tsx)$/,
-  /__tests__\//,
-  /tests?\//,  // Директории с тестами
-  /\.d\.ts$/,  // TypeScript декларации (обычно генерируются)
-];
+- 🎵 **Синтез музыки**: Генерация треков в стилях (Rock, Jazz, Classical и др.) с контролем длительности и количества элементов.
+- 💾 **Хранение с лимитами**: Репозиторий с уникальными именами (UUID), атомарным экспортом и очисткой при ошибках. Лимиты: 10 файлов/пользователь, 100 МБ.
+- 🛡️ **Валидация**: Pydantic v2 модели (`MusicFile`, `MusicStyle`) с `model_dump()`.
+- 🌐 **Сервер**: HTTP-сервер с обработкой ошибок (HTTP 400 при превышении лимитов).
+- 🐳 **Docker-поддержка**: Легкое развертывание в контейнерах.
+- 🔄 **Стратегии**: Возвращают сырые PCM-байты для гибкости.
 
-// Приоритетные файлы (загружаем первыми)
-const priorityPatterns = [
-  /^readme\.md$/i,
-  /^package\.json$/,
-  /^requirements\.txt$/,
-  /^pyproject\.toml$/,
-  /^main\.(py|js|ts)$/,
-  /^index\.(py|js|ts)$/,
-  /^app\.(py|js|ts)$/,
-  /^server\.(py|js|ts)$/,
-  /models?\.py$/,
-  /schema\.py$/,
-];
+## 🛠️ Установка
 
-// Фильтруем файлы
-const allFiles = structure.filter(item => {
-  // Только файлы
-  if (item.type !== 'file') return false;
-  
-  // Ограничение размера (100KB)
-  if (item.size > 100000) return false;
-  
-  // Проверяем исключения
-  if (excludePatterns.some(p => p.test(item.path))) {
-    // Исключение для package-lock.json и poetry.lock
-    if (item.path === 'package-lock.json' || item.path === 'poetry.lock') {
-      return false; // Всё равно исключаем - слишком большие
-    }
-    return false;
-  }
-  
-  // Проверяем совпадение с ключевыми паттернами
-  return keyPatterns.some(p => p.test(item.path));
-});
+### Предварительные требования
+- Python 3.10+
+- Docker (рекомендуется)
 
-// Сортируем: приоритетные файлы первыми
-const sortedFiles = allFiles.sort((a, b) => {
-  const aPriority = priorityPatterns.some(p => p.test(a.path)) ? 0 : 1;
-  const bPriority = priorityPatterns.some(p => p.test(b.path)) ? 0 : 1;
-  
-  if (aPriority !== bPriority) {
-    return aPriority - bPriority;
-  }
-  
-  // При равном приоритете - меньшие файлы первыми
-  return a.size - b.size;
-});
+### Через pip (локальная разработка)
+```bash
+git clone https://github.com/your-org/music-synthesizer-agent.git
+cd music-synthesizer-agent
+pip install -r requirements.txt
+```
 
-// Берём топ-50 файлов
-const filesToFetch = sortedFiles.slice(0, 50);
+### Через Docker
+```bash
+docker pull your-org/music-synthesizer-agent:latest
+docker run -p 8000:8000 your-org/music-synthesizer-agent:latest
+```
 
-// Сохраняем SHA для ВСЕХ файлов (для UPDATE операций)
-const existingFileShas = {};
-structure.forEach(item => {
-  if (item.type === 'file') {
-    existingFileShas[item.path] = item.sha;
-  }
-});
+## ⚙️ Конфигурация
 
-// Логируем для отладки
-console.log(`Total files in repo: ${structure.filter(i => i.type === 'file').length}`);
-console.log(`Files matching patterns: ${allFiles.length}`);
-console.log(`Files to fetch: ${filesToFetch.length}`);
-console.log(`First 10 files:`, filesToFetch.slice(0, 10).map(f => f.path));
+Создайте файл `.env` в корне проекта:
 
-return [{
-  json: {
-    ...formData,
-    structure: structure,
-    files_to_fetch: filesToFetch,
-    existing_file_shas: existingFileShas,
-    stats: {
-      total_files: structure.filter(i => i.type === 'file').length,
-      matching_files: allFiles.length,
-      files_to_fetch: filesToFetch.length
-    }
-  }
-}];
+```env
+# Репозиторий
+REPO_PATH=/tmp/music_repo
+MAX_FILES_PER_USER=10
+MAX_TOTAL_SIZE_MB=100
+
+# Сервер
+HOST=0.0.0.0
+PORT=8000
+
+# Синтезатор (пример)
+SAMPLE_RATE=44100
+MAX_DURATION_SEC=300
+```
+
+Загрузите переменные в коде:
+```python
+from dotenv import load_dotenv
+load_dotenv()
+```
+
+## 📖 Использование
+
+### Запуск сервера
+```bash
+python src/agents/music_synthesizer_agent/server.py
+```
+Сервер доступен на `http://localhost:8000`.
+
+### Пример генерации музыки (CLI)
+```python
+from src.agents.music_synthesizer_agent.agent import MusicSynthesizerAgent
+from src.agents.music_synthesizer_agent.models import MusicStyle, MusicFile
+
+agent = MusicSynthesizerAgent(user_id="user123")
+style = MusicStyle(name="Rock", tempo=120, max_length=60)
+file = agent.synthesize(style)  # Возвращает MusicFile с pcm_bytes
+
+print(f"Сгенерировано: {file.duration} сек, {len(file.pcm_bytes)} байт")
+```
+
+### HTTP-запрос (cURL)
+```bash
+curl -X POST http://localhost:8000/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user123",
+    "style": {"name": "Jazz", "tempo": 90, "max_length": 30}
+  }'
+```
+Ответ:
+```json
+{
+  "file_id": "uuid-123",
+  "duration": 30.5,
+  "pcm_bytes": "AQAAAA=="  // base64-encoded PCM
+}
+```
+
+## 📚 API
+
+### Ключевые модели (Pydantic)
+```python
+from pydantic import BaseModel
+from typing import bytes
+
+class MusicStyle(BaseModel):
+    name: str
+    tempo: int
+    max_length: int = 60  # сек
+    max_items: int = 100
+
+class MusicFile(BaseModel):
+    file_id: str
+    pcm_bytes: bytes
+    duration: float
+    sample_rate: int = 44100
+```
+
+### Эндпоинты сервера
+| Метод | Путь              | Описание                  |
+|-------|-------------------|---------------------------|
+| POST  | `/synthesize`     | Синтез музыки по стилю   |
+| GET   | `/files/{user_id}`| Список файлов пользователя|
+
+Подробности в [server.py](src/agents/music_synthesizer_agent/server.py).
+
+## 🏗️ Архитектура
+
+- **Компоненты**: `MusicSynthesizerAgent` (Facade), `MusicFile`/`MusicStyle` (Models), `MusicSynthesizerServer` (HTTP).
+- **Паттерны**:
+  | Паттерн   | Использование                  |
+  |-----------|--------------------------------|
+  | Strategy  | Стратегии синтеза (RockStrategy и др.) |
+  | Builder   | Построение композиций         |
+  | Facade    | Упрощенный API агента         |
+  | Repository| Хранение с лимитами и UUID    |
+
+Диаграмма:
+```
+User → MusicSynthesizerAgent (Facade)
+         ↓
+Strategies → PCM Bytes → Repository → MusicFile
+         ↓
+MusicSynthesizerServer (HTTP)
+```
+
+## 🤝 Вклад в разработку
+
+1. Форкните репозиторий.
+2. Создайте ветку: `git checkout -b feature/new-strategy`.
+3. Коммитьте изменения: `git commit -m "Add new Jazz strategy"`.
+4. Пушьте: `git push origin feature/new-strategy`.
+5. Откройте Pull Request.
+
+Следуйте PEP 8. Тесты добавляются в `tests/`.
+
+## 📄 Лицензия
+
+[MIT License](LICENSE). См. файл `LICENSE` для деталей.
