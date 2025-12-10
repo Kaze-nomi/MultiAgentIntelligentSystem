@@ -526,39 +526,41 @@ async def plan_file_structure(
 ## ТРЕБОВАНИЯ:
 1. Следуй существующим соглашениям по именованию
 2. Группируй связанные компоненты
-3. Создавай __init__.py для Python пакетов
-4. Размещай тесты рядом или в tests/
-5. Учитывай слои архитектуры
+3. Размещай тесты рядом или в tests/
+4. Учитывай слои архитектуры
+5. Учитывай архитектуру текущего проекта и выбирай пути согласованные с ней
+6. Выбирай расположения файлов в соответствии с архитектурой, не суй всё в корневую директорию, если этого не требует архитектура
+
 
 ## ФОРМАТ ОТВЕТА (JSON):
 {{
     "files": [
         {{
-            "path": "src/auth/jwt_handler.py",
-            "type": "module",
-            "description": "JWT аутентификация",
-            "contains": ["JWTAuthenticator", "TokenPayload"],
-            "imports_from": ["src/config", "src/auth/interfaces"],
-            "exports": ["JWTAuthenticator", "TokenPayload"]
+            "path": "путь/к/файлу.расширение",
+            "type": "module | package | test | config | schema",
+            "description": "Краткое описание назначения файла",
+            "contains": ["Класс1", "Класс2", "функция1"],
+            "imports_from": ["путь/к/зависимости1", "путь/к/зависимости2"],
+            "exports": ["Класс1", "функция1"]
         }},
         {{
-            "path": "src/auth/interfaces.py",
+            "path": "путь/к/интерфейсам.расширение",
             "type": "module",
-            "description": "Интерфейсы аутентификации",
-            "contains": ["IAuthenticator"],
-            "exports": ["IAuthenticator"]
+            "description": "Интерфейсы и абстрактные классы",
+            "contains": ["IИнтерфейс1", "BaseКласс"],
+            "exports": ["IИнтерфейс1", "BaseКласс"]
         }},
         {{
-            "path": "src/auth/__init__.py",
+            "path": "путь/к/пакету/модулю.расширение",
             "type": "package",
-            "description": "Auth пакет",
-            "exports": ["JWTAuthenticator", "IAuthenticator"]
+            "description": "Инициализация пакета, реэкспорт публичного API",
+            "exports": ["ГлавныйКласс", "вспомогательная_функция"]
         }},
         {{
-            "path": "tests/test_jwt_handler.py",
+            "path": "tests/test_модуль.расширение",
             "type": "test",
-            "description": "Тесты JWT",
-            "contains": ["TestJWTAuthenticator"]
+            "description": "Тесты для модуля",
+            "contains": ["TestГлавныйКласс", "TestВспомогательныеФункции"]
         }}
     ]
 }}

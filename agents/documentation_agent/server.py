@@ -119,6 +119,11 @@ async def call_llm(
 - Целевую аудиторию
 - Лучшие практики документирования
 
+ВАЖНО:
+- Ты никогда не придумываешь, то чего не было коде или в архитектуре
+- Всегда пишешь только о том, что действительно реализовано
+- Никогда не ври
+
 Возвращаешь ответы в Markdown или JSON когда это указано."""
     
     try:
@@ -474,7 +479,7 @@ async def extract_api_endpoints(
         # Ищем файлы с API
         if any(x in path for x in ["route", "api", "endpoint", "controller", "view"]):
             api_code.append({"path": f.get("path"), "content": content[:4000]})
-        elif any(x in content.lower() for x in ["@app.", "@router.", "def get", "def post", "async def"]):
+        elif any(x in content.lower() for x in ["@app.", "@router.", "def get", "def post", "async def", "route", "endpoint", "api", "controller", "FastAPI", "Flask", "Express"]):
             api_code.append({"path": f.get("path"), "content": content[:4000]})
     
     if not api_code:

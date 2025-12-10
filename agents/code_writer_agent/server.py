@@ -328,7 +328,7 @@ async def generate_code(
     for fs in file_structure:
         path = fs.get('path', '')
         contains = fs.get('contains', [])
-        if path and fs.get('type') != 'test':  # Пропускаем тесты
+        if path:  
             files_desc.append(f"- {path}: содержит {', '.join(contains) if contains else 'модуль'}")
     
     prompt = f"""Напиши полный рабочий код для реализации задачи.
@@ -340,7 +340,7 @@ async def generate_code(
 {chr(10).join(components_desc) if components_desc else 'Определи компоненты самостоятельно на основе задачи'}
 
 ## СТРУКТУРА ФАЙЛОВ
-{chr(10).join(files_desc[:15]) if files_desc else 'Определи структуру самостоятельно'}
+{chr(10).join(files_desc[:100]) if files_desc else 'Определи структуру самостоятельно'}
 
 ## ИНТЕРФЕЙСЫ
 {json.dumps(interfaces, indent=2, ensure_ascii=False) if interfaces else 'Определи интерфейсы самостоятельно'}
