@@ -63,8 +63,8 @@ AGENT_URLS = {
 }
 
 # Timeouts
-DEFAULT_TIMEOUT = 180  # 3 минуты
-LLM_TIMEOUT = 120  # 2 минуты
+DEFAULT_TIMEOUT = 240
+LLM_TIMEOUT = 240
 
 # Retry configuration
 MAX_PIPELINE_RETRIES = 1  # Максимум одна попытка retry после ошибки

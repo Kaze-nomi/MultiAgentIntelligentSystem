@@ -62,7 +62,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
-LLM_TIMEOUT = 120
+LLM_TIMEOUT = 240
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL")
 
 # ============================================================================
