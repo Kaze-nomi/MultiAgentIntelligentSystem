@@ -1,228 +1,157 @@
-// model : tngtech/deepseek-r1t-chimera:free
+# Moonlight Sonata Synthesizer 🎹
 
-// model : deepseek/deepseek-chat-v3-0324
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-20.10%2B-blue.svg)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-1.0.0-orange.svg)](https://github.com/yourusername/moonlight-sonata-synthesizer/releases)
 
-//6487984216
+## 📋 Содержание
 
+- [Описание](#-описание)
+- [Возможности](#-возможности)
+- [Установка](#-установка)
+- [Использование](#-использование)
+- [Конфигурация](#-конфигурация)
+- [API](#-api)
+- [Вклад в разработку](#-вклад-в-разработку)
+- [Лицензия](#-лицензия)
 
-const formData = $('📋 Prepare Data').first().json;
-const treeResponse = $input.first().json;
+## 📖 Описание
 
-// Парсим структуру репозитория
-const structure = (treeResponse.tree || []).map(item => ({
-  path: item.path,
-  type: item.type === 'blob' ? 'file' : 'dir',
-  size: item.size || 0,
-  sha: item.sha
-}));
+**Moonlight Sonata Synthesizer** — это Python-проект для синтеза аудио **Лунной сонаты** Бетховена (Piano Sonata No. 14 in C-sharp minor, Op. 27 No. 2). Проект генерирует высококачественный WAV-файл на основе нотной партитуры, используя векторизованные вычисления NumPy для эффективности.
 
-// РАСШИРЕННЫЕ паттерны для ключевых файлов
-const keyPatterns = [
-  // ===== Конфигурационные файлы =====
-  /^readme\.md$/i,
-  /^changelog\.md$/i,
-  /^contributing\.md$/i,
-  /^package\.json$/,
-  /^package-lock\.json$/,
-  /^requirements\.txt$/,
-  /^pyproject\.toml$/,
-  /^setup\.py$/,
-  /^setup\.cfg$/,
-  /^poetry\.lock$/,
-  /^Pipfile$/,
-  /^docker-compose\.ya?ml$/,
-  /^dockerfile$/i,
-  /^\.env\.example$/,
-  /^\.env\.sample$/,
-  /^tsconfig\.json$/,
-  /^vite\.config\.(js|ts)$/,
-  /^webpack\.config\.js$/,
-  /^next\.config\.(js|mjs)$/,
-  /^nuxt\.config\.(js|ts)$/,
-  /^\.eslintrc(\.(js|json|yml))?$/,
-  /^\.prettierrc(\.(js|json|yml))?$/,
-  /^tailwind\.config\.(js|ts)$/,
-  /^cargo\.toml$/i,
-  /^go\.mod$/,
-  /^go\.sum$/,
-  /^makefile$/i,
-  /^justfile$/i,
-  
-  // ===== Точки входа =====
-  /^main\.(py|js|ts|go|rs)$/,
-  /^index\.(py|js|ts|tsx|jsx)$/,
-  /^app\.(py|js|ts|tsx|jsx)$/,
-  /^server\.(py|js|ts)$/,
-  /^run\.(py|js|ts)$/,
-  /^cli\.(py|js|ts)$/,
-  
-  // ===== Python файлы =====
-  /\.py$/,  // Все Python файлы
-  
-  // ===== JavaScript/TypeScript =====
-  /^src\/.*\.(js|jsx|ts|tsx)$/,
-  /^lib\/.*\.(js|jsx|ts|tsx)$/,
-  /^app\/.*\.(js|jsx|ts|tsx)$/,
-  /^pages\/.*\.(js|jsx|ts|tsx)$/,
-  /^components\/.*\.(js|jsx|ts|tsx)$/,
-  /^hooks\/.*\.(js|jsx|ts|tsx)$/,
-  /^utils\/.*\.(js|ts)$/,
-  /^helpers\/.*\.(js|ts)$/,
-  /^services\/.*\.(js|ts)$/,
-  /^api\/.*\.(js|ts)$/,
-  /^routes?\/.*\.(js|ts)$/,
-  /^controllers?\/.*\.(js|ts)$/,
-  /^middleware\/.*\.(js|ts)$/,
-  /^models?\/.*\.(js|ts)$/,
-  /^schemas?\/.*\.(js|ts)$/,
-  /^types?\/.*\.(ts|d\.ts)$/,
-  /^store\/.*\.(js|ts)$/,
-  /^config\/.*\.(js|ts|json)$/,
-  
-  // ===== Go =====
-  /\.go$/,
-  
-  // ===== Rust =====
-  /\.rs$/,
-  
-  // ===== C++ =====
-  /\.cpp$/,  
-  /\.cxx$/,  
-  /\.c$/,  
+Недавние улучшения:
+- Исправлены критические баги в синтезаторе (DDA, длительность, валидация нот).
+- Оптимизация производительности (NumPy-векторизация).
+- Добавлена обработка ошибок, санитизация файлов и поддержка MIDI.
+- Партитура адаптирована для 120 ударов (5 повторений мелодии).
 
-  // ===== Java =====
-  /\.java$/,
-  /\build.gradle.kts$/,
-  /\pom.xml$/,
+Проект использует Docker для простого развертывания.
 
-  
-  // ===== Конфиги в поддиректориях =====
-  /config\/.*\.(json|ya?ml|toml)$/,
-  /\.github\/workflows\/.*\.ya?ml$/
-];
+## ✨ Возможности
 
-// Паттерны для ИСКЛЮЧЕНИЯ
-const excludePatterns = [
-  /node_modules\//,
-  /\.git\//,
-  /dist\//,
-  /build\//,
-  /\.next\//,
-  /\.nuxt\//,
-  /out\//,
-  /__pycache__\//,
-  /\.pytest_cache\//,
-  /\.mypy_cache\//,
-  /\.ruff_cache\//,
-  /\.venv\//,
-  /venv\//,
-  /\.env\//,
-  /env\//,
-  /virtualenv\//,
-  /\.tox\//,
-  /\.eggs\//,
-  /\.egg-info\//,
-  /htmlcov\//,
-  /coverage\//,
-  /\.coverage/,
-  /\.cache\//,
-  /\.temp\//,
-  /\.tmp\//,
-  /target\//,  // Rust/Java build
-  /vendor\//,  // Go vendor
-  /\.idea\//,
-  /\.vscode\//,
-  /\.DS_Store/,
-  /Thumbs\.db/,
-  /\.log$/,
-  /\.lock$/,  // Кроме package-lock.json и poetry.lock
-  /\.min\.(js|css)$/,  // Минифицированные файлы
-  /\.map$/,  // Source maps
-  /\.bundle\.(js|css)$/,
-  /test_.*\.py$/,  // Тестовые файлы Python
-  /.*_test\.py$/,
-  /.*\.test\.(js|ts|jsx|tsx)$/,  // Тестовые файлы JS
-  /.*\.spec\.(js|ts|jsx|tsx)$/,
-  /__tests__\//,
-  /tests?\//,  // Директории с тестами
-  /\.d\.ts$/,  // TypeScript декларации (обычно генерируются)
-];
+- 🎵 Синтез **Лунной сонаты** в формате WAV (44.1kHz, 16-bit).
+- ⚡ Высокая производительность благодаря NumPy (до 10x быстрее).
+- 🔒 Безопасный релиз огибающей, валидация нот и ограничение длительности.
+- 🎛 Настраиваемый темп, высота тона и длительность.
+- 🐳 Полная поддержка Docker.
+- 📱 Кроссплатформенность (Windows, macOS, Linux).
 
-// Приоритетные файлы (загружаем первыми)
-const priorityPatterns = [
-  /^readme\.md$/i,
-  /^package\.json$/,
-  /^requirements\.txt$/,
-  /^pyproject\.toml$/,
-  /^main\.(py|js|ts)$/,
-  /^index\.(py|js|ts)$/,
-  /^app\.(py|js|ts)$/,
-  /^server\.(py|js|ts)$/,
-  /models?\.py$/,
-  /schema\.py$/,
-];
+## 📦 Установка
 
-// Фильтруем файлы
-const allFiles = structure.filter(item => {
-  // Только файлы
-  if (item.type !== 'file') return false;
-  
-  // Ограничение размера (100KB)
-  if (item.size > 100000) return false;
-  
-  // Проверяем исключения
-  if (excludePatterns.some(p => p.test(item.path))) {
-    // Исключение для package-lock.json и poetry.lock
-    if (item.path === 'package-lock.json' || item.path === 'poetry.lock') {
-      return false; // Всё равно исключаем - слишком большие
-    }
-    return false;
-  }
-  
-  // Проверяем совпадение с ключевыми паттернами
-  return keyPatterns.some(p => p.test(item.path));
-});
+### Предварительные требования
+- Python 3.8+
+- Docker (рекомендуется для изоляции)
 
-// Сортируем: приоритетные файлы первыми
-const sortedFiles = allFiles.sort((a, b) => {
-  const aPriority = priorityPatterns.some(p => p.test(a.path)) ? 0 : 1;
-  const bPriority = priorityPatterns.some(p => p.test(b.path)) ? 0 : 1;
-  
-  if (aPriority !== bPriority) {
-    return aPriority - bPriority;
-  }
-  
-  // При равном приоритете - меньшие файлы первыми
-  return a.size - b.size;
-});
+### Вариант 1: pip (локальная установка)
+```bash
+git clone https://github.com/yourusername/moonlight-sonata-synthesizer.git
+cd moonlight-sonata-synthesizer
+pip install numpy
+```
 
-// Берём топ-50 файлов
-const filesToFetch = sortedFiles.slice(0, 50);
+### Вариант 2: Docker (рекомендуется)
+```bash
+git clone https://github.com/yourusername/moonlight-sonata-synthesizer.git
+cd moonlight-sonata-synthesizer
+docker build -t moonlight-sonata .
+```
 
-// Сохраняем SHA для ВСЕХ файлов (для UPDATE операций)
-const existingFileShas = {};
-structure.forEach(item => {
-  if (item.type === 'file') {
-    existingFileShas[item.path] = item.sha;
-  }
-});
+## 🚀 Использование
 
-// Логируем для отладки
-console.log(`Total files in repo: ${structure.filter(i => i.type === 'file').length}`);
-console.log(`Files matching patterns: ${allFiles.length}`);
-console.log(`Files to fetch: ${filesToFetch.length}`);
-console.log(`First 10 files:`, filesToFetch.slice(0, 10).map(f => f.path));
+### Быстрый запуск (генерация sonata.wav)
+```bash
+# Локально
+python main.py
 
-return [{
-  json: {
-    ...formData,
-    structure: structure,
-    files_to_fetch: filesToFetch,
-    existing_file_shas: existingFileShas,
-    stats: {
-      total_files: structure.filter(i => i.type === 'file').length,
-      matching_files: allFiles.length,
-      files_to_fetch: filesToFetch.length
-    }
-  }
-}];
+# Docker
+docker run --rm -v $(pwd):/app/output moonlight-sonata python main.py
+```
+
+Это создаст файл `sonata.wav` (~2-5 МБ) с полной сонатой.
+
+### Пример с кастомными параметрами
+```bash
+python main.py --tempo 120 --output custom_sonata.wav --sample_rate 48000
+```
+
+Воспроизведите файл:
+```bash
+ffplay sonata.wav  # или любой плеер
+```
+
+## ⚙️ Конфигурация
+
+Конфигурация через аргументы командной строки или переменные окружения:
+
+| Параметр       | Описание                  | По умолчанию | Пример |
+|----------------|---------------------------|--------------|--------|
+| `--tempo`      | Темп (BPM)                | 60           | 120   |
+| `--sample_rate`| Частота дискретизации (Hz)| 44100        | 48000 |
+| `--output`     | Имя выходного файла       | sonata.wav   | my.wav|
+| `--duration`   | Максимальная длительность | 300s         | 180s  |
+
+Пример:
+```bash
+export TEMPO=90
+python main.py
+```
+
+## 📚 API
+
+### `synthesizer.py`
+Основной синтезатор. Ключевые функции:
+
+```python
+import numpy as np
+from synthesizer import generate_note, synthesize_score
+
+# Генерация одной ноты
+note = generate_note(frequency=261.63, duration=1.0, sample_rate=44100, volume=0.8)
+# Возвращает: np.ndarray (моно-аудио)
+
+# Синтез партитуры
+audio = synthesize_score(notes, sample_rate=44100, tempo=60)
+np.save('audio.npy', audio)  # Или сохраните как WAV
+```
+
+### `score.py`
+Партитура Лунной сонаты (1-я часть, триольная тема).
+
+```python
+from score import get_moonlight_score
+
+score = get_moonlight_score(num_repeats=5)  # Список нот: [{'pitch': 277, 'duration': 0.5}, ...]
+print(f"Всего {len(score)} нот, {TOTAL_BARS} тактов")
+```
+
+### `main.py`
+Точка входа:
+```python
+from main import main
+
+if __name__ == "__main__":
+    main(tempo=60, output="sonata.wav")
+```
+
+Полная документация в докстрингах файлов.
+
+## 🤝 Вклад в разработку
+
+1. Форкните репозиторий.
+2. Создайте ветку: `git checkout -b feature/your-feature`.
+3. Зафиксируйте изменения: `git commit -m "Add your feature"`.
+4. Запушьте: `git push origin feature/your-feature`.
+5. Откройте Pull Request.
+
+**Тестирование:**
+```bash
+pip install -r requirements.txt  # numpy
+python -m pytest  # Если добавите тесты
+```
+
+Используйте pre-commit хуки для linting (black, ruff).
+
+## 📄 Лицензия
+
+[MIT License](LICENSE). См. файл `LICENSE` для деталей.
