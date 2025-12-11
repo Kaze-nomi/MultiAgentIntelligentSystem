@@ -373,8 +373,11 @@ async def design_components(
 2. Проектируй по SOLID принципам
 3. Минимизируй связанность (loose coupling)
 4. Максимизируй связность (high cohesion)
-5. Учитывай тестируемость
-6. Каждый компонент - одна ответственность
+5. Каждый компонент - одна ответственность
+
+## САМОЕ ВАЖНОЕ:
+
+НЕ усложняй архитектуру намеренно, если на это нет оснований
 
 ## ФОРМАТ ОТВЕТА (JSON):
 {{
@@ -477,25 +480,6 @@ async def design_components(
             except ValueError:
                 comp_type = ComponentType.CLASS
 
-
-# default
-#   Input should be a valid string [type=string_type, input_value=1000, input_type=int]
-#     For further information visit https://errors.pydantic.dev/2.5/v/string_type
-# Traceback (most recent call last):
-#   File "/app/server.py", line 1165, in process_architecture
-#     existing_arch, design = await design_architecture(
-#                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "/app/server.py", line 1092, in design_architecture
-#     components, interfaces, relations = await design_components(
-#                                         ^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "/app/server.py", line 482, in design_components
-#     properties.append(PropertySpec(**prop))
-#                       ^^^^^^^^^^^^^^^^^^^^
-#   File "/usr/local/lib/python3.11/site-packages/pydantic/main.py", line 164, in __init__
-#     __pydantic_self__.__pydantic_validator__.validate_python(data, self_instance=__pydantic_self__)
-# pydantic_core._pydantic_core.ValidationError: 1 validation error for PropertySpec
-# default
-#   Input should be a valid string [type=string_type, input_value=1000, input_type=int]
             properties = []
             for prop in comp_data.get("properties", []):
                 properties.append(PropertySpec(**prop))
@@ -631,10 +615,9 @@ async def plan_file_structure(
 ## ТРЕБОВАНИЯ:
 1. Следуй существующим соглашениям по именованию
 2. Группируй связанные компоненты
-3. Размещай тесты рядом или в tests/
-4. Учитывай слои архитектуры
-5. Учитывай архитектуру текущего проекта и выбирай пути согласованные с ней
-6. Выбирай расположения файлов в соответствии с архитектурой, не суй всё в корневую директорию, если этого не требует архитектура
+3. Учитывай слои архитектуры
+4. Учитывай архитектуру текущего проекта и выбирай пути согласованные с ней
+5. Выбирай расположения файлов в соответствии с архитектурой, не суй всё в корневую директорию, если этого не требуется
 
 ## ФОРМАТ ОТВЕТА (JSON):
 {{
