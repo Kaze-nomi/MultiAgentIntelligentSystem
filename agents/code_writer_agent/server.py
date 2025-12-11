@@ -339,7 +339,7 @@ async def analyze_coding_style(
 
 async def generate_code(
     task: str,
-    architecture: Dict[str, Any],
+    architecture: Optional[Dict[str, Any]],
     tech_stack: TechStack,
     repo_context: Dict[str, Any],
     coding_style: CodingStyle,
@@ -358,21 +358,23 @@ async def generate_code(
 
     # Форматируем компоненты для промпта
     components_desc = []
-    for comp in components:
-        desc = f"- **{comp.get('name', 'Unknown')}** ({comp.get('type', 'class')}): {comp.get('responsibility', '')}"
-        methods = comp.get('methods', [])
-        if methods:
-            method_names = [m.get('name', '') for m in methods[:5]]
-            desc += f"\n  Методы: {', '.join(method_names)}"
-        components_desc.append(desc)
+    if components:
+        for comp in components:
+            desc = f"- **{comp.get('name', 'Unknown')}** ({comp.get('type', 'class')}): {comp.get('responsibility', '')}"
+            methods = comp.get('methods', [])
+            if methods:
+                method_names = [m.get('name', '') for m in methods[:5]]
+                desc += f"\n  Методы: {', '.join(method_names)}"
+            components_desc.append(desc)
 
     # Форматируем структуру файлов
     files_desc = []
-    for fs in file_structure:
-        path = fs.get('path', '')
-        contains = fs.get('contains', [])
-        if path:
-            files_desc.append(f"- {path}: содержит {', '.join(contains) if contains else 'модуль'}")
+    if file_structure:
+        for fs in file_structure:
+            path = fs.get('path', '')
+            contains = fs.get('contains', [])
+            if path:
+                files_desc.append(f"- {path}: содержит {', '.join(contains) if contains else 'модуль'}")
 
     # Форматируем уже сгенерированные файлы для контекста
     generated_files_desc = []
@@ -385,7 +387,11 @@ async def generate_code(
     # Получаем путь к файлу для генерации
     file_path = file_to_generate.get('path', '')
 
-    prompt = f"""Напиши полный рабочий код для одного файла: {file_path}
+    # Определяем, есть ли архитектурная информация
+    has_architecture = bool(components or file_structure or interfaces or patterns)
+
+    if has_architecture:
+        prompt = f"""Напиши полный рабочий код для одного файла: {file_path}
 
 ## ЗАДАЧА
 {task}
@@ -443,6 +449,53 @@ async def generate_code(
 }}
 
 ВАЖНО: Верни только JSON, без ```json``` блоков!"""
+    else:
+        # Промпт без архитектуры - упрощённый
+        prompt = f"""Напиши полный рабочий код для файла: {file_path}
+
+## ЗАДАЧА
+{task}
+
+## КОНТЕКСТ ПРОЕКТА
+{chr(10).join(generated_files_desc) if generated_files_desc else 'Это первый файл в проекте'}
+
+## ТЕХНОЛОГИИ
+- Язык: {tech_stack.primary_language}
+- Фреймворки: {', '.join(tech_stack.frameworks) if tech_stack.frameworks else 'стандартная библиотека'}
+
+## СТИЛЬ КОДА
+- Именование переменных: {coding_style.naming.variables}
+- Именование функций: {coding_style.naming.functions}
+- Именование классов: {coding_style.naming.classes}
+- Docstrings: {coding_style.docstring_format}
+- Отступы: {coding_style.indent_size} пробела
+
+## ТРЕБОВАНИЯ
+1. Пиши ПОЛНЫЙ РАБОЧИЙ код - НЕ заглушки, НЕ TODO, НЕ pass
+2. Файл должен быть законченным и работающим
+3. Добавляй все необходимые импорты в начале файла
+4. Добавляй docstrings к классам и функциям
+5. Обрабатывай возможные ошибки
+6. Код должен соответствовать указанному стилю
+7. Определи подходящую структуру самостоятельно на основе задачи
+
+## ФОРМАТ ОТВЕТА
+Верни JSON объект (без markdown блоков):
+
+{{
+    "file": {{
+        "path": "{file_path}",
+        "content": "полный код файла",
+        "language": "язык программирования",
+        "description": "описание назначения файла"
+    }},
+    "implementation_notes": [
+        "заметка о реализации 1",
+        "заметка о реализации 2"
+    ]
+}}
+
+ВАЖНО: Верни только JSON, без ```json``` блоков!"""
 
     logger.info("Generating code...")
     response = await call_llm(prompt, max_tokens=100000, temperature=0.3, step="code_writer_code_generation")
@@ -474,19 +527,29 @@ async def generate_code(
 async def generate_code_simple(
     task: str,
     tech_stack: TechStack,
-    coding_style: CodingStyle
+    coding_style: CodingStyle,
+    repo_context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Упрощённая генерация когда основной метод не сработал
     """
     
     logger.info("Trying simple code generation...")
-    
+
+    # Добавляем контекст репозитория если есть
+    repo_info = ""
+    if repo_context:
+        key_files = repo_context.get("key_files", {})
+        if key_files:
+            repo_info = "\n\nКОНТЕКСТ ПРОЕКТА:\n"
+            for path, content in list(key_files.items())[:3]:  # Ограничиваем до 3 файлов
+                repo_info += f"Файл {path}:\n{content[:1000]}...\n\n"
+
     prompt = f"""Напиши код для следующей задачи.
 
 ЗАДАЧА: {task}
 
-ЯЗЫК: {tech_stack.primary_language}
+ЯЗЫК: {tech_stack.primary_language}{repo_info}
 
 Создай все необходимые файлы с полным рабочим кодом.
 
@@ -531,45 +594,59 @@ async def revise_code(
     """
     Исправляет код по замечаниям ревьюера
     """
-    
+
     original_files = original_code.get("files", [])
-    
+
     if not original_files:
         logger.warning("No original files to revise")
         return original_code
-    
-    # Сортируем issues по severity
-    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    sorted_issues = sorted(
-        review_issues,
-        key=lambda x: severity_order.get(x.get("severity", "low"), 3)
-    )
-    
-    # Форматируем файлы (ограничиваем размер контента)
-    files_for_prompt = []
-    for f in original_files:
-        files_for_prompt.append({
-            "path": f.get("path", ""),
-            "content": f.get("content", "")[:50000],  # Ограничиваем
-            "language": f.get("language", "")
-        })
-    
-    # Форматируем issues
-    issues_for_prompt = []
-    for issue in sorted_issues[:50]:  # Берём топ-50
-        issues_for_prompt.append({
-            "id": issue.get("id", ""),
-            "type": issue.get("type", ""),
-            "severity": issue.get("severity", ""),
-            "description": issue.get("description", ""),
-            "file_path": issue.get("file_path", ""),
-            "suggestion": issue.get("suggestion", "")
-        })
-    
-    prompt = f"""Исправь код по замечаниям код-ревьюера.
 
-## ОРИГИНАЛЬНЫЙ КОД
-{json.dumps(files_for_prompt, indent=2, ensure_ascii=False)}
+    results = {
+        "files": [],
+        "addressed_issues": [],
+        "implementation_notes": [],
+        "unaddressed_issues": []
+    }
+
+    for file in original_files:
+        file_path = file.get("path", "")
+        file_issues = [issue for issue in review_issues if issue.get("file_path") == file_path]
+
+        if not file_issues:
+            # No issues for this file, keep as is
+            results["files"].append(file)
+            continue
+
+        # Sort issues by severity
+        severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        sorted_issues = sorted(
+            file_issues,
+            key=lambda x: severity_order.get(x.get("severity", "low"), 3)
+        )
+
+        # Format file for prompt
+        file_for_prompt = {
+            "path": file.get("path", ""),
+            "content": file.get("content", "")[:50000],  # Limit
+            "language": file.get("language", "")
+        }
+
+        # Format issues
+        issues_for_prompt = []
+        for issue in sorted_issues[:50]:  # Top 50, but since per file, probably less
+            issues_for_prompt.append({
+                "id": issue.get("id", ""),
+                "type": issue.get("type", ""),
+                "severity": issue.get("severity", ""),
+                "description": issue.get("description", ""),
+                "file_path": issue.get("file_path", ""),
+                "suggestion": issue.get("suggestion", "")
+            })
+
+        prompt = f"""Исправь код одного файла по замечаниям код-ревьюера.
+
+## ОРИГИНАЛЬНЫЙ ФАЙЛ
+{json.dumps(file_for_prompt, indent=2, ensure_ascii=False)}
 
 ## ЗАМЕЧАНИЯ (отсортированы по важности)
 {json.dumps(issues_for_prompt, indent=2, ensure_ascii=False)}
@@ -587,36 +664,41 @@ async def revise_code(
 Верни JSON (без markdown блоков):
 
 {{
-    "files": [
-        {{
-            "path": "путь/к/файлу",
-            "content": "исправленный полный код",
-            "language": "язык",
-            "description": "что исправлено"
-        }}
-    ],
+    "file": {{
+        "path": "{file_path}",
+        "content": "исправленный полный код",
+        "language": "язык",
+        "description": "что исправлено"
+    }},
     "addressed_issues": ["id1", "id2"],
     "implementation_notes": ["что было изменено"]
 }}
 
 Только JSON!"""
 
-    response = await call_llm(prompt, max_tokens=100000, temperature=0.2, step="code_writer_code_revision")
-    result = parse_json_response(response)
-    
-    if not result or not result.get("files"):
-        logger.warning("Revision failed, returning original")
-        return {
-            "files": [f.dict() for f in original_files],
-            "implementation_notes": ["Revision parsing failed"],
-            "addressed_issues": [],
-            "unaddressed_issues": [{"id": "all", "reason": "Parse error"}]
-        }
-    
-    logger.info(f"Revision complete: {len(result.get('files', []))} files, "
-                f"addressed: {len(result.get('addressed_issues', []))} issues")
-    
-    return result
+        response = await call_llm(prompt, max_tokens=100000, temperature=0.2, step="code_writer_code_revision")
+        result = parse_json_response(response)
+
+        if not result or not result.get("file"):
+            logger.warning(f"Revision failed for {file_path}, keeping original")
+            results["files"].append(file)
+            # Add issues to unaddressed
+            for issue in file_issues:
+                results["unaddressed_issues"].append({
+                    "id": issue.get("id", ""),
+                    "reason": "Revision failed"
+                })
+            continue
+
+        revised_file = result["file"]
+        results["files"].append(revised_file)
+        results["addressed_issues"].extend(result.get("addressed_issues", []))
+        results["implementation_notes"].extend(result.get("implementation_notes", []))
+
+    logger.info(f"Revision complete: {len(results['files'])} files, "
+                f"addressed: {len(results['addressed_issues'])} issues")
+
+    return results
 
 
 # ============================================================================
@@ -775,25 +857,39 @@ async def process_code_write(request: CodeWriteRequest):
             result = {}
             result["files"] = []
             result["implementation_notes"] = []
-            file_structure = architecture.get("file_structure", [])
-            generated_files = []  # Накопленный контекст сгенерированных файлов
-            for fs in file_structure:
-                result_fs = await generate_code(
+
+            # Проверяем, есть ли архитектурная информация
+            file_structure = architecture.get("file_structure", []) if architecture else []
+
+            if file_structure:
+                # Есть структура файлов - генерируем по архитектуре
+                generated_files = []  # Накопленный контекст сгенерированных файлов
+                for fs in file_structure:
+                    result_fs = await generate_code(
+                        task=request.task,
+                        architecture=architecture,
+                        tech_stack=tech_stack,
+                        repo_context=repo_context,
+                        coding_style=coding_style,
+                        file_to_generate=fs,
+                        generated_files=generated_files
+                    )
+
+                    # Добавляем сгенерированный файл в контекст для следующих файлов
+                    if result_fs.get("file"):
+                        generated_files.append(result_fs["file"])
+
+                    result["files"].extend(result_fs["files"])
+                    result["implementation_notes"].extend(result_fs["implementation_notes"])
+            else:
+                # Нет архитектуры - генерируем простой файл
+                logger.info("No architecture provided, generating simple file")
+                result = await generate_code_simple(
                     task=request.task,
-                    architecture=architecture,
                     tech_stack=tech_stack,
-                    repo_context=repo_context,
                     coding_style=coding_style,
-                    file_to_generate=fs,
-                    generated_files=generated_files
+                    repo_context=repo_context
                 )
-
-                # Добавляем сгенерированный файл в контекст для следующих файлов
-                if result_fs.get("file"):
-                    generated_files.append(result_fs["file"])
-
-                result["files"].extend(result_fs["files"])
-                result["implementation_notes"].extend(result_fs["implementation_notes"])
 
         elif action == "revise_code":
             original_code = data.get("original_code", {})

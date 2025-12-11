@@ -588,95 +588,95 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
     Планирует pipeline выполнения на основе задачи
     Определяет какие агенты нужны и в каком порядке
     """
-    
+
     prompt = f"""
-Проанализируй задачу и определи какие агенты нужны для её выполнения.
+    Проанализируй задачу и определи какие агенты нужны для её выполнения.
 
-ЗАДАЧА:
-{context.task_description}
+    ЗАДАЧА:
+    {context.task_description}
 
-ТЕХНОЛОГИЧЕСКИЙ СТЕК:
-- Язык: {context.tech_stack.primary_language if context.tech_stack else 'unknown'}
-- Фреймворки: {', '.join(context.tech_stack.frameworks) if context.tech_stack else 'unknown'}
-- Паттерны: {', '.join(context.tech_stack.architecture_patterns) if context.tech_stack else 'unknown'}
+    ТЕХНОЛОГИЧЕСКИЙ СТЕК:
+    - Язык: {context.tech_stack.primary_language if context.tech_stack else 'unknown'}
+    - Фреймворки: {', '.join(context.tech_stack.frameworks) if context.tech_stack else 'unknown'}
+    - Паттерны: {', '.join(context.tech_stack.architecture_patterns) if context.tech_stack else 'unknown'}
 
-СТРУКТУРА РЕПОЗИТОРИЯ:
-- {len(context.repo_context.get('structure', []))} файлов
-- Ключевые файлы: {list(context.repo_context.get('key_files', {}).keys())[:20]}
+    СТРУКТУРА РЕПОЗИТОРИЯ:
+    - {len(context.repo_context.get('structure', []))} файлов
+    - Ключевые файлы: {list(context.repo_context.get('key_files', {}).keys())[:20]}
 
-ДОСТУПНЫЕ АГЕНТЫ:
+    ДОСТУПНЫЕ АГЕНТЫ:
 
-1. architect - Проектирование архитектуры
-   - Анализирует существующую архитектуру
-   - Проектирует новые компоненты
-   - Определяет интерфейсы
-   - Создаёт диаграммы
-   НУЖЕН если: новая фича, рефакторинг, изменение структуры
+    1. architect - Проектирование архитектуры
+       - Анализирует существующую архитектуру
+       - Проектирует новые компоненты
+       - Определяет интерфейсы
+       - Создаёт диаграммы
+       НУЖЕН если: новая фича, рефакторинг, изменение структуры
 
-2. code_writer - Написание кода
-   - Пишет код по архитектуре
-   - Следует стилю проекта
-   - Добавляет типизацию и docstrings
-   НУЖЕН для: любых изменений кода
+    2. code_writer - Написание кода
+       - Пишет код по архитектуре
+       - Следует стилю проекта
+       - Добавляет типизацию и docstrings
+       НУЖЕН для: любых изменений кода
 
-3. code_reviewer - Проверка кода
-   - Находит баги и уязвимости
-   - Проверяет соответствие архитектуре
-   - Может вернуть код на доработку
-   НУЖЕН: всегда после code_writer
+    3. code_reviewer - Проверка кода
+       - Находит баги и уязвимости
+       - Проверяет соответствие архитектуре
+       - Может вернуть код на доработку
+       НУЖЕН: всегда после code_writer
 
-4. documentation - Документация
-   - Создаёт документацию
-   - Обновляет README
-   - Создаёт API документацию
-   - Пишет CHANGELOG
-   НУЖЕН: после финализации кода
+    4. documentation - Документация
+       - Создаёт документацию
+       - Обновляет README
+       - Создаёт API документацию
+       - Пишет CHANGELOG
+       НУЖЕН: после финализации кода
 
-ПРАВИЛА PIPELINE:
-- architect -> code_writer (если нужна архитектура)
-- code_writer -> code_reviewer (всегда)
-- code_reviewer может вернуть на code_writer (review loop)
-- documentation идёт последним
+    ПРАВИЛА PIPELINE:
+    - architect -> code_writer (если нужна архитектура)
+    - code_writer -> code_reviewer (всегда)
+    - code_reviewer может вернуть на code_writer (review loop)
+    - documentation идёт последним
 
-ВАЖНО:
-- ВСЕГДА НУЖНО СОЗДАТЬ КАК МИНИМУМ ОДИН ФАЙЛ!
+    ВАЖНО:
+    - ВСЕГДА НУЖНО СОЗДАТЬ КАК МИНИМУМ ОДИН ФАЙЛ!
 
-Верни JSON:
-{{
-    "pipeline": [
-        {{
-            "agent": "architect",
-            "action": "design_architecture",
-            "description": "Проектирование архитектуры JWT аутентификации",
-            "input_from": [],
-            "priority": "high"
-        }},
-        {{
-            "agent": "code_writer",
-            "action": "write_code",
-            "description": "Написание кода аутентификации",
-            "input_from": ["architect"],
-            "priority": "high"
-        }},
-        {{
-            "agent": "code_reviewer",
-            "action": "review_code",
-            "description": "Проверка кода",
-            "input_from": ["code_writer", "architect"],
-            "priority": "high"
-        }},
-        {{
-            "agent": "documentation",
-            "action": "write_docs",
-            "description": "Создание документации",
-            "input_from": ["code_writer", "code_reviewer", "architect"],
-            "priority": "medium"
-        }}
-    ],
-    "reasoning": "Объяснение почему выбран такой pipeline",
-    "skip_agents": ["список агентов которые не нужны и почему"]
-}}
-"""
+    Верни JSON:
+    {{
+        "pipeline": [
+            {{
+                "agent": "architect",
+                "action": "design_architecture",
+                "description": "Проектирование архитектуры JWT аутентификации",
+                "input_from": [],
+                "priority": "high"
+            }},
+            {{
+                "agent": "code_writer",
+                "action": "write_code",
+                "description": "Написание кода аутентификации",
+                "input_from": ["architect"],
+                "priority": "high"
+            }},
+            {{
+                "agent": "code_reviewer",
+                "action": "review_code",
+                "description": "Проверка кода",
+                "input_from": ["code_writer", "architect"],
+                "priority": "high"
+            }},
+            {{
+                "agent": "documentation",
+                "action": "write_docs",
+                "description": "Создание документации",
+                "input_from": ["code_writer", "code_reviewer", "architect"],
+                "priority": "medium"
+            }}
+        ],
+        "reasoning": "Объяснение почему выбран такой pipeline",
+        "skip_agents": ["список агентов которые не нужны и почему"]
+    }}
+    """
     
     response = await call_llm(prompt, step="plan_pipeline")
     parsed = parse_json_response(response)
@@ -755,7 +755,7 @@ def build_agent_request(
     Собирает запрос для агента с учётом результатов предыдущих агентов
     ИСПРАВЛЕНО: Правильные форматы данных для каждого агента
     """
-    
+
     # Базовые данные
     request = {
         "task": context.task_description,
@@ -770,11 +770,11 @@ def build_agent_request(
         },
         "priority": step.priority.value
     }
-    
+
     # Добавляем результаты от указанных агентов
     for source_agent in step.input_from:
-        if source_agent == AgentType.ARCHITECT and context.architecture_result:
-            # Architect -> передаём плоскую структуру
+        if source_agent == AgentType.ARCHITECT and context.architecture_result and step.agent != AgentType.ARCHITECT:
+            # Architect -> передаём dict структуру (стандартизировано)
             request["data"]["architecture"] = {
                 "components": [c.dict() if hasattr(c, 'dict') else c for c in context.architecture_result.components],
                 "patterns": context.architecture_result.patterns,
@@ -785,14 +785,14 @@ def build_agent_request(
                 "diagrams": context.architecture_result.diagrams,
                 "recommendations": context.architecture_result.recommendations
             }
-            
+
         elif source_agent == AgentType.CODE_WRITER and context.code_result:
             # Code Writer -> передаём files в правильном формате
             request["data"]["code"] = {
                 "files": context.code_result.files,
                 "implementation_notes": context.code_result.implementation_notes
             }
-            
+
         elif source_agent == AgentType.CODE_REVIEWER and context.review_result:
             # Code Reviewer -> передаём результат ревью
             request["data"]["review"] = {
@@ -803,7 +803,7 @@ def build_agent_request(
                 "suggestions": context.review_result.suggestions,
                 "summary": context.review_result.summary
             }
-    
+
     # Специфичные данные для revise_code
     if step.agent == AgentType.CODE_WRITER and step.action == "revise_code":
         if context.review_result:
@@ -813,7 +813,7 @@ def build_agent_request(
             request["data"]["original_code"] = {
                 "files": context.code_result.files
             }
-    
+
     return request
 
 
@@ -1163,7 +1163,7 @@ async def execute_pipeline(
                     {"error": result.error}
                 )
                 
-                # КРИТИЧЕСКАЯ ПРОВЕРКА: Code Writer должен создать файлы
+                # КРИТИЧЕСКАЯ ПРОВЕРКА: Code Writer должен создать файлы (только если он в pipeline)
                 if step.agent == AgentType.CODE_WRITER:
                     critical_failure = True
                     context.log_error(
@@ -1202,9 +1202,10 @@ async def execute_pipeline(
             {"duration": result.duration_seconds}
         )
         
-        # После Code Reviewer проверяем нужен ли review loop
+        # После Code Reviewer проверяем нужен ли review loop (только если есть Code Writer в pipeline)
         if step.agent == AgentType.CODE_REVIEWER:
-            if context.review_result and context.review_result.needs_revision:
+            has_code_writer = any(s.agent == AgentType.CODE_WRITER for s in context.pipeline.steps)
+            if has_code_writer and context.review_result and context.review_result.needs_revision:
                 context = await handle_review_loop(context)
     
     # Определяем итоговый статус
@@ -1340,7 +1341,7 @@ async def generate_commit_message(context: TaskContext) -> str:
 Верни только commit message без кавычек.
 """
     
-    response = await call_llm(prompt, temperature=0.1)
+    response = await call_llm(prompt, temperature=0.1, step="commit_message_generation")
     message = response.strip().strip('"').strip("'")
     
     if not message or len(message) < 10:
@@ -1675,7 +1676,7 @@ async def process_workflow(request: WorkflowRequest):
         # 7. Финальная проверка успешности выполнения
         # Проверяем только после всех retry попыток
         all_files = context.get_all_files()
-        
+
         # 8. Определение статуса
         workflow_status = determine_workflow_status(context, pipeline_success, has_files)
         

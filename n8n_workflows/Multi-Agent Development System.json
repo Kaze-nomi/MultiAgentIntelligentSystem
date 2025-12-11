@@ -1,5 +1,5 @@
 {
-  "name": "Multi-Agent Development System version ULTRA v2",
+  "name": "Multi-Agent Development System",
   "nodes": [
     {
       "parameters": {
@@ -41,7 +41,7 @@
       "typeVersion": 2.1,
       "position": [
         -4672,
-        384
+        256
       ],
       "webhookId": "dev-task"
     },
@@ -226,7 +226,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -2704,
+        -2720,
         384
       ]
     },
@@ -430,7 +430,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// =====================================================\n// 📊 PROCESS RESULT: Обрабатываем результат PUT\n// =====================================================\nconst items = $input.all();\nconst firstData = $('📄 Split Pending Files').first().json;\n\n// Собираем результаты\nconst results = items.map(item => {\n  const data = item.json;\n  const path = data?.content?.path || null;\n  \n  \n  // Проверяем успех\n  if (data.content && data.commit) {\n    return { path, status: 'success', sha: data.content.sha };\n  } else {\n    const error = data.message || data.error || 'Unknown error';\n    return { path, status: 'failed', error };\n  }\n});\n\nconsole.log(results);\n\n// Обновляем состояние файлов\nconst updatedFiles = firstData.files_to_process.map(f => {\n  if (f.status != 'success') {\n    const result = results.find(r => r.path === f.path);\n    if (result) {\n      if (result.status === 'success') {\n        return { ...f, status: 'success', new_sha: result.sha };\n      }\n    } else {\n      return {\n        ...f,\n        attempts: f.attempts + 1,\n        status: f.attempts + 1 >= firstData.max_attempts ? 'failed' : 'pending'    \n      }\n    }\n  }\n});\n\n// Подсчитываем статистику\nconst successCount = updatedFiles.filter(f => f.status === 'success').length;\nconst pendingCount = updatedFiles.filter(f => f.status === 'pending').length;\nconst failedCount = updatedFiles.filter(f => f.status === 'failed').length;\n\nconsole.log(`After attempt ${firstData.current_attempt}: success=${successCount}, pending=${pendingCount}, failed=${failedCount}`);\n\n// Если есть pending файлы и не превысили лимит попыток - продолжаем\nconst needRetry = pendingCount > 0 && firstData.current_attempt < firstData.max_attempts;\n\nreturn [{\n  json: {\n    repo_owner: firstData.repo_owner,\n    repo_name: firstData.repo_name,\n    branch_name: firstData.branch_name,\n    base_branch: firstData.base_branch,\n    commit_message: firstData.commit_message,\n    pr_title: firstData.pr_title,\n    pr_description: firstData.pr_description,\n    summary: firstData.summary,\n    task_id: firstData.task_id,\n    tech_stack: firstData.tech_stack,\n    review_iterations: firstData.review_iterations,\n    agent_results: firstData.agent_results,\n    files_to_process: updatedFiles,\n    current_attempt: firstData.current_attempt + 1,\n    max_attempts: firstData.max_attempts,\n    // Статистика\n    success_count: successCount,\n    pending_count: pendingCount,\n    failed_count: failedCount,\n    need_retry: needRetry,\n    all_done: !needRetry\n  }\n}];"
+        "jsCode": "// =====================================================\n// 📊 PROCESS RESULT: Обрабатываем результат PUT\n// =====================================================\nconst items = $input.all();\nconst firstData = $('📄 Split Pending Files').first().json;\n\n// Собираем результаты\nconst results = items.map(item => {\n  const data = item.json;\n  const path = data?.content?.path || null;\n  \n  \n  // Проверяем успех\n  if (data.content && data.commit) {\n    return { path, status: 'success', sha: data.content.sha };\n  } else {\n    const error = data.message || data.error || 'Unknown error';\n    return { path, status: 'failed', error };\n  }\n});\n\nconsole.log(results);\n\n// Обновляем состояние файлов\nconst updatedFiles = firstData.files_to_process.map(f => {\n  if (f.status != 'success') {\n    const result = results.find(r => r.path === f.path);\n    if (result) {\n      if (result.status === 'success') {\n        return { ...f, status: 'success', new_sha: result.sha };\n      }\n    } else {\n      return {\n        ...f,\n        attempts: f.attempts + 1,\n        status: f.attempts + 1 >= firstData.max_attempts ? 'failed' : 'pending'    \n      }\n    }\n  } else {\n    return {\n      ...f\n    }\n  }\n});\n\n// Подсчитываем статистику\nconst successCount = updatedFiles.filter(f => f.status === 'success').length;\nconst pendingCount = updatedFiles.filter(f => f.status === 'pending').length;\nconst failedCount = updatedFiles.filter(f => f.status === 'failed').length;\n\nconsole.log(`After attempt ${firstData.current_attempt}: success=${successCount}, pending=${pendingCount}, failed=${failedCount}`);\n\n// Если есть pending файлы и не превысили лимит попыток - продолжаем\nconst needRetry = pendingCount > 0 && firstData.current_attempt < firstData.max_attempts;\n\nreturn [{\n  json: {\n    repo_owner: firstData.repo_owner,\n    repo_name: firstData.repo_name,\n    branch_name: firstData.branch_name,\n    base_branch: firstData.base_branch,\n    commit_message: firstData.commit_message,\n    pr_title: firstData.pr_title,\n    pr_description: firstData.pr_description,\n    summary: firstData.summary,\n    task_id: firstData.task_id,\n    tech_stack: firstData.tech_stack,\n    review_iterations: firstData.review_iterations,\n    agent_results: firstData.agent_results,\n    files_to_process: updatedFiles,\n    current_attempt: firstData.current_attempt + 1,\n    max_attempts: firstData.max_attempts,\n    // Статистика\n    success_count: successCount,\n    pending_count: pendingCount,\n    failed_count: failedCount,\n    need_retry: needRetry,\n    all_done: !needRetry\n  }\n}];"
       },
       "id": "99b31229-8436-4be3-9e76-00bf267db4e4",
       "name": "📊 Process Results",
@@ -704,6 +704,42 @@
         -2016,
         512
       ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -4896,
+        512
+      ],
+      "id": "834841ca-63e2-407d-9725-c2544b6fcc55",
+      "name": "Telegram Trigger",
+      "webhookId": "9cb6dd03-4e32-4275-83f9-a96c38719a44",
+      "credentials": {
+        "telegramApi": {
+          "id": "kakDfZD7GZ0uQLva",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4672,
+        512
+      ],
+      "id": "8054f4f3-4358-4cba-8231-a8ad97595eaa",
+      "name": "Code in JavaScript"
     }
   ],
   "pinData": {},
@@ -1076,14 +1112,37 @@
           }
         ]
       ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "📋 Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "b27a3a3a-f872-4f70-9ec5-83de6bce2e47",
+  "versionId": "b36a3eab-8565-4cdd-97d8-02a2a5da478c",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "28f87a46502090a63d81c1b0d194b30cb85aa507eb30004f35c39d5a49ec1f61"
   },
   "id": "Es9Dt9JoftPSPtXt",

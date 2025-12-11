@@ -186,12 +186,13 @@ class ArchitectureInput(BaseModel):
 
 class ReviewIssue(BaseModel):
     """Замечание от Code Reviewer"""
-    id: str
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     type: str  # bug, security, performance, style, architecture_violation
     severity: str  # critical, high, medium, low
+    title: str = ""
+    description: str
     file_path: Optional[str] = None
     line_number: Optional[int] = None
-    description: str
     suggestion: Optional[str] = None
     code_snippet: Optional[str] = None
     

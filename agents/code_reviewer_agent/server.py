@@ -245,22 +245,22 @@ def parse_json_response(response: str) -> Optional[Dict]:
 # ============================================================================
 
 async def check_architecture_compliance(
-    code_files: List[Dict[str, Any]],
+    code_file: Dict[str, Any],
     architecture: Dict[str, Any],
     tech_stack: TechStack
-) -> Tuple[ArchitectureCompliance, List[ReviewIssue]]:
+) -> Tuple[List[ArchitectureCheck], List[ReviewIssue]]:
     """
     Проверяет соответствие кода архитектуре от Architect Agent
     """
-    
+
     if not architecture:
-        return ArchitectureCompliance(overall_compliant=True), []
-    
+        return [], []
+
     components = architecture.get("components", [])
     interfaces = architecture.get("interfaces", [])
     file_structure = architecture.get("file_structure", [])
     patterns = architecture.get("patterns", [])
-    
+
     prompt = f"""
 Проверь соответствие кода спроектированной архитектуре.
 
@@ -279,7 +279,7 @@ async def check_architecture_compliance(
 {json.dumps(patterns, indent=2, ensure_ascii=False)}
 
 ## КОД ДЛЯ ПРОВЕРКИ:
-{json.dumps([{"path": f.get("path"), "content": f.get("content", "")[:3000]} for f in code_files], indent=2, ensure_ascii=False)}
+{json.dumps({"path": code_file.get("path"), "content": code_file.get("content", "")[:3000]}, indent=2, ensure_ascii=False)}
 
 ## ПРОВЕРЬ:
 
@@ -291,7 +291,6 @@ async def check_architecture_compliance(
 
 ## ФОРМАТ ОТВЕТА (JSON):
 {{
-    "overall_compliant": true/false,
     "checks": [
         {{
             "component_name": "имя компонента",
@@ -301,10 +300,6 @@ async def check_architecture_compliance(
             "issue": "описание проблемы если есть"
         }}
     ],
-    "missing_components": ["список нереализованных компонентов"],
-    "extra_components": ["лишние компоненты не из архитектуры"],
-    "interface_violations": ["нарушения интерфейсов"],
-    "dependency_violations": ["нарушения зависимостей"],
     "issues": [
         {{
             "type": "architecture_violation",
@@ -317,30 +312,23 @@ async def check_architecture_compliance(
     ]
 }}
 """
-    
+
     response = await call_llm(prompt, step="code_reviewer_summary_generation")
     parsed = parse_json_response(response)
-    
+
     issues = []
-    compliance = ArchitectureCompliance(overall_compliant=True)
-    
+    checks = []
+
     if parsed:
-        compliance = ArchitectureCompliance(
-            overall_compliant=parsed.get("overall_compliant", True),
-            checks=[ArchitectureCheck(**c) for c in parsed.get("checks", [])],
-            missing_components=parsed.get("missing_components", []),
-            extra_components=parsed.get("extra_components", []),
-            interface_violations=parsed.get("interface_violations", []),
-            dependency_violations=parsed.get("dependency_violations", [])
-        )
-        
+        checks = [ArchitectureCheck(**c) for c in parsed.get("checks", [])]
+
         # Создаём issues
         for issue_data in parsed.get("issues", []):
             try:
                 severity = IssueSeverity(issue_data.get("severity", "medium"))
             except ValueError:
                 severity = IssueSeverity.MEDIUM
-            
+
             issues.append(ReviewIssue(
                 type=IssueType.ARCHITECTURE_VIOLATION,
                 severity=severity,
@@ -349,18 +337,8 @@ async def check_architecture_compliance(
                 file_path=issue_data.get("file_path"),
                 suggestion=issue_data.get("suggestion")
             ))
-        
-        # Добавляем issues для missing components
-        for comp in compliance.missing_components:
-            issues.append(ReviewIssue(
-                type=IssueType.ARCHITECTURE_VIOLATION,
-                severity=IssueSeverity.HIGH,
-                title=f"Missing component: {comp}",
-                description=f"Component '{comp}' was specified in architecture but not implemented",
-                suggestion=f"Implement the '{comp}' component according to architecture specification"
-            ))
-    
-    return compliance, issues
+
+    return checks, issues
 
 
 # ============================================================================
@@ -368,9 +346,9 @@ async def check_architecture_compliance(
 # ============================================================================
 
 async def check_security(
-    code_files: List[Dict[str, Any]],
+    code_file: Dict[str, Any],
     tech_stack: TechStack
-) -> Tuple[SecurityReport, List[ReviewIssue]]:
+) -> Tuple[List[SecurityFinding], List[ReviewIssue]]:
     """
     Проверяет код на уязвимости безопасности
     """
@@ -384,7 +362,7 @@ async def check_security(
 - Базы данных: {', '.join(tech_stack.databases)}
 
 ## КОД:
-{json.dumps([{"path": f.get("path"), "content": f.get("content", "")} for f in code_files], indent=2, ensure_ascii=False)[:15000]}
+{json.dumps({"path": code_file.get("path"), "content": code_file.get("content", "")}, indent=2, ensure_ascii=False)[:15000]}
 
 ## ПРОВЕРЬ НА:
 
@@ -401,7 +379,6 @@ async def check_security(
 
 ## ФОРМАТ ОТВЕТА (JSON):
 {{
-    "passed": true/false,
     "findings": [
         {{
             "vulnerability_type": "sql_injection/xss/hardcoded_secret/...",
@@ -412,25 +389,23 @@ async def check_security(
             "cwe_id": "CWE-89",
             "remediation": "как исправить"
         }}
-    ],
-    "checked_patterns": ["что было проверено"]
+    ]
 }}
 """
-    
+
     response = await call_llm(prompt, step="code_reviewer_architecture_check")
     parsed = parse_json_response(response)
-    
+
     issues = []
-    report = SecurityReport(passed=True)
-    
+    findings = []
+
     if parsed:
-        findings = []
         for f in parsed.get("findings", []):
             try:
                 severity = IssueSeverity(f.get("severity", "medium"))
             except ValueError:
                 severity = IssueSeverity.MEDIUM
-            
+
             findings.append(SecurityFinding(
                 vulnerability_type=f.get("vulnerability_type", "unknown"),
                 severity=severity,
@@ -440,7 +415,7 @@ async def check_security(
                 cwe_id=f.get("cwe_id"),
                 remediation=f.get("remediation", "")
             ))
-            
+
             # Создаём issue
             issues.append(ReviewIssue(
                 type=IssueType.SECURITY,
@@ -452,14 +427,8 @@ async def check_security(
                 suggestion=f.get("remediation"),
                 references=[f.get("cwe_id")] if f.get("cwe_id") else []
             ))
-        
-        report = SecurityReport(
-            passed=parsed.get("passed", len(findings) == 0),
-            findings=findings,
-            checked_patterns=parsed.get("checked_patterns", [])
-        )
-    
-    return report, issues
+
+    return findings, issues
 
 
 # ============================================================================
@@ -467,7 +436,7 @@ async def check_security(
 # ============================================================================
 
 async def check_code_quality(
-    code_files: List[Dict[str, Any]],
+    code_file: Dict[str, Any],
     tech_stack: TechStack
 ) -> List[ReviewIssue]:
     """
@@ -870,33 +839,57 @@ async def perform_code_review(
     """
     Выполняет полное ревью кода
     """
-    
+
     all_issues: List[ReviewIssue] = []
-    
-    # 1. Проверка соответствия архитектуре
-    logger.info("Checking architecture compliance...")
-    architecture_compliance, arch_issues = await check_architecture_compliance(
-        code_files, architecture, tech_stack
+    all_architecture_checks: List[ArchitectureCheck] = []
+    all_security_findings: List[SecurityFinding] = []
+
+    # Process each file sequentially
+    for code_file in code_files:
+        logger.info(f"Processing file: {code_file.get('path')}")
+
+        # 1. Проверка соответствия архитектуре
+        logger.info("Checking architecture compliance...")
+        arch_checks, arch_issues = await check_architecture_compliance(
+            code_file, architecture, tech_stack
+        )
+        all_architecture_checks.extend(arch_checks)
+        all_issues.extend(arch_issues)
+
+        # 2. Проверка безопасности
+        logger.info("Checking security...")
+        security_findings, security_issues = await check_security(code_file, tech_stack)
+        all_security_findings.extend(security_findings)
+        all_issues.extend(security_issues)
+
+        # 3. Проверка качества кода
+        logger.info("Checking code quality...")
+        quality_issues = await check_code_quality(code_file, tech_stack)
+        all_issues.extend(quality_issues)
+
+    # Create overall compliance and report objects
+    architecture_compliance = ArchitectureCompliance(
+        overall_compliant=len([c for c in all_architecture_checks if not c.compliant]) == 0,
+        checks=all_architecture_checks,
+        missing_components=[],  # These would need to be calculated across all files
+        extra_components=[],
+        interface_violations=[],
+        dependency_violations=[]
     )
-    all_issues.extend(arch_issues)
-    
-    # 2. Проверка безопасности
-    logger.info("Checking security...")
-    security_report, security_issues = await check_security(code_files, tech_stack)
-    all_issues.extend(security_issues)
-    
-    # 3. Проверка качества кода
-    logger.info("Checking code quality...")
-    quality_issues = await check_code_quality(code_files, tech_stack)
-    all_issues.extend(quality_issues)
-    
+
+    security_report = SecurityReport(
+        passed=len(all_security_findings) == 0,
+        findings=all_security_findings,
+        checked_patterns=[]
+    )
+
     # 4. Принимаем решение
     decision, needs_revision, blocking_ids = make_review_decision(all_issues)
-    
+
     # 5. Вычисляем метрики
     quality_score = calculate_quality_score(all_issues, len(code_files))
     detailed_scores = calculate_detailed_scores(all_issues)
-    
+
     metrics = ReviewMetrics(
         total_files=len(code_files),
         total_lines=sum(f.get("content", "").count('\n') + 1 for f in code_files),
@@ -914,19 +907,19 @@ async def perform_code_review(
         security_score=detailed_scores.get("security", 10.0),
         performance_score=detailed_scores.get("performance", 10.0)
     )
-    
+
     # 6. Создаём сводки по файлам
     file_summaries = create_file_summaries(code_files, all_issues)
-    
+
     # 7. Генерируем рекомендации
     suggestions = generate_suggestions(all_issues)
-    
+
     # 8. Генерируем summary
     summary = await generate_review_summary(
         all_issues, decision, quality_score,
         architecture_compliance, security_report
     )
-    
+
     # 9. Обновляем метрики Prometheus
     REVIEWS_TOTAL.labels(decision=decision.value).inc()
     for issue in all_issues:
@@ -934,21 +927,21 @@ async def perform_code_review(
             severity=issue.severity.value,
             type=issue.type.value
         ).inc()
-    
-    return ReviewResult(
-        decision=decision,
-        approved=(decision == ReviewDecision.APPROVED),
-        needs_revision=needs_revision,
-        quality_score=quality_score,
-        issues=all_issues,
-        suggestions=suggestions,
-        summary=summary,
-        metrics=metrics,
-        file_summaries=file_summaries,
-        architecture_compliance=architecture_compliance,
-        security_report=security_report,
-        blocking_issues=blocking_ids
-    )
+
+    return {
+        "decision": decision.value,
+        "approved": (decision == ReviewDecision.APPROVED),
+        "needs_revision": needs_revision,
+        "quality_score": quality_score,
+        "issues": [i.dict() for i in all_issues],
+        "suggestions": suggestions,
+        "summary": summary,
+        "metrics": metrics.dict() if hasattr(metrics, 'dict') else metrics,
+        "file_summaries": [fs.dict() for fs in file_summaries],
+        "architecture_compliance": architecture_compliance.dict() if hasattr(architecture_compliance, 'dict') else architecture_compliance,
+        "security_report": security_report.dict() if hasattr(security_report, 'dict') else security_report,
+        "blocking_issues": blocking_ids
+    }
 
 
 # ============================================================================
@@ -1022,18 +1015,92 @@ async def process_code_review(request: CodeReviewRequest):
 # ADDITIONAL ENDPOINTS
 # ============================================================================
 
+@app.post("/review-repo")
+async def review_repo(request: Dict[str, Any]):
+    """
+    Проверяет весь репозиторий - все файлы из repo_context
+    """
+
+    task_id = request.get("task_id", str(uuid.uuid4())[:8])
+    repo_context = request.get("repo_context", {})
+    tech_stack_data = request.get("tech_stack", {})
+    tech_stack = TechStack(**tech_stack_data) if tech_stack_data else TechStack()
+
+    logger.info(f"[{task_id}] Starting repository review")
+
+    # Извлекаем все файлы из repo_context
+    code_files = []
+    key_files = repo_context.get("key_files", {})
+
+    for file_path, content in key_files.items():
+        if isinstance(content, str) and content.strip():
+            # Определяем язык по расширению
+            language = "text"
+            if "." in file_path:
+                ext = file_path.rsplit(".", 1)[-1].lower()
+                lang_map = {
+                    "py": "python", "js": "javascript", "ts": "typescript",
+                    "java": "java", "c": "c", "cpp": "cpp", "cs": "csharp",
+                    "php": "php", "rb": "ruby", "go": "go", "rs": "rust"
+                }
+                language = lang_map.get(ext, "text")
+
+            code_files.append({
+                "path": file_path,
+                "content": content,
+                "language": language
+            })
+
+    logger.info(f"[{task_id}] Reviewing {len(code_files)} files from repository")
+
+    if not code_files:
+        return {
+            "decision": "approved",
+            "approved": True,
+            "needs_revision": False,
+            "quality_score": 10.0,
+            "issues": [],
+            "suggestions": ["Repository appears to be empty or no code files found"],
+            "summary": "No code files to review",
+            "metrics": {
+                "total_files": 0,
+                "total_lines": 0,
+                "total_issues": 0,
+                "critical_issues": 0,
+                "high_issues": 0,
+                "medium_issues": 0,
+                "low_issues": 0,
+                "overall_quality_score": 10.0
+            },
+            "file_summaries": [],
+            "blocking_issues": []
+        }
+
+    # Выполняем полное ревью
+    result = await perform_code_review(
+        code_files=code_files,
+        architecture={},  # Нет архитектуры для ревью репозитория
+        tech_stack=tech_stack,
+        repo_context=repo_context
+    )
+
+    logger.info(f"[{task_id}] Repository review completed: {result.get('decision', 'unknown')}")
+
+    return result
+
+
 @app.post("/quick-check")
 async def quick_security_check(request: Dict[str, Any]):
     """
     Быстрая проверка только на безопасность
     """
-    
+
     code_files = request.get("files", [])
     tech_stack_data = request.get("tech_stack", {})
     tech_stack = TechStack(**tech_stack_data) if tech_stack_data else TechStack()
-    
+
     security_report, issues = await check_security(code_files, tech_stack)
-    
+
     return {
         "passed": security_report.passed,
         "findings_count": len(security_report.findings),
@@ -1084,10 +1151,11 @@ async def root():
             "Error handling",
             "Type safety"
         ],
-        "receives_from": ["code_writer", "architect"],
+        "receives_from": ["code_writer", "architect", "project_manager"],
         "decisions": ["approved", "needs_revision", "rejected"],
         "endpoints": {
             "process": "POST /process - полное ревью",
+            "review_repo": "POST /review-repo - ревью всего репозитория",
             "quick_check": "POST /quick-check - быстрая проверка безопасности",
             "thresholds": "GET /thresholds - пороги качества",
             "health": "GET /health",
