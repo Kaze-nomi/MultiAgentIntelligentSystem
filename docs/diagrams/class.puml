@@ -1,0 +1,12 @@
+@startuml
+title PlantUML Class Diagram for ArbuzSpeaker and ISpeaker
+
+interface ISpeaker {
+    + say_arbuz() : str
+}
+
+class ArbuzSpeaker implements ISpeaker {
+    + say_arbuz() : str
+}
+
+@enduml
