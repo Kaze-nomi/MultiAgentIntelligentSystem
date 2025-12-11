@@ -1,0 +1,21 @@
+@startuml
+title Music Composition System Class Diagram
+
+class "Music Composer Agent" as MusicComposerAgent {
+  +llm_service : OpenRouterMCPService
+  +composition_style : str
+  +generate_composition(prompt, key) : MusicalComposition
+  +validate_composition(composition) : bool
+}
+
+class "Musical Composition Model" as MusicalCompositionModel {
+}
+
+interface IMusicComposer {
+  +generate_composition() : MusicalComposition
+  +validate_composition() : bool
+}
+
+MusicComposerAgent ..|> IMusicComposer : implements
+
+@enduml
