@@ -1,0 +1,10 @@
+@startuml
+title Component Diagram for ArbuzSpeaker Service
+
+package "Business Layer" {
+  interface ISpeaker #LightGreen
+  component ArbuzSpeaker #LightBlue
+  ArbuzSpeaker ..|> ISpeaker : implements
+}
+
+@enduml
