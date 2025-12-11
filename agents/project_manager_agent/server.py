@@ -446,6 +446,7 @@ Pipeline выполнения упал. Нужно создать НОВЫЙ pip
             )
             
             logger.info(f"[{context.task_id[:8]}] Replanned pipeline with {len(steps)} steps")
+            logger.info(f"Replanned pipeline: {steps}")
             
             return Pipeline(
                 steps=steps,
@@ -698,6 +699,8 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
             except (ValueError, KeyError) as e:
                 logger.warning(f"Error parsing pipeline step: {e}")
                 continue
+
+        logger.info(f"Generated pipeline: {steps}")
         
         return Pipeline(
             steps=steps,
@@ -1651,6 +1654,12 @@ async def process_workflow(request: WorkflowRequest):
                 PIPELINE_RETRIES.labels(success="success").inc()
                 context.log_step("retry_pipeline", "Retry succeeded with files generated!")
                 logger.info(f"[{context.task_id[:8]}] Pipeline retry succeeded with {len(all_files)} files")
+                context.errors = []
+                context.log_step(
+                    "cleanup_errors",
+                    f"Cleaned old errors after successful retry (kept {len(context.errors)} recent errors)"
+                )
+
             else:
                 PIPELINE_RETRIES.labels(success="failed").inc()
                 context.log_step(

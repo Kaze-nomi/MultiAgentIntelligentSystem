@@ -501,6 +501,20 @@ async def design_components(
                     raises=method.get("raises", [])
                 ))
 
+            # ИСПРАВЛЕНИЕ: Гарантируем, что implements и dependencies - списки
+            implements = comp_data.get("implements")
+            if implements is None or not isinstance(implements, list):
+                implements = []
+                
+            dependencies = comp_data.get("dependencies")
+            if dependencies is None or not isinstance(dependencies, list):
+                dependencies = []
+            
+            # ИСПРАВЛЕНИЕ: Гарантируем, что extends - строка или None
+            extends = comp_data.get("extends")
+            if extends is not None and not isinstance(extends, str):
+                extends = None
+
             components.append(ComponentSpec(
                 name=comp_data.get("name", ""),
                 type=comp_type,
@@ -508,42 +522,50 @@ async def design_components(
                 responsibility=comp_data.get("responsibility", ""),
                 properties=properties,
                 methods=methods,
-                dependencies=comp_data.get("dependencies", []),
-                extends=comp_data.get("extends"),
-                implements=comp_data.get("implements", []),
+                dependencies=dependencies,
+                extends=extends,
+                implements=implements,
                 layer=comp_data.get("layer", "")
             ))
 
-        # Парсим интерфейсы
-        for iface_data in parsed.get("interfaces", []):
-            methods = []
-            for method in iface_data.get("methods", []):
-                params = [MethodParameter(**p) for p in method.get("parameters", [])]
-                methods.append(MethodSpec(
-                    name=method.get("name", ""),
-                    parameters=params,
-                    return_type=method.get("return_type", "None")
+            # Парсим интерфейсы
+            for iface_data in parsed.get("interfaces", []):
+                methods = []
+                for method in iface_data.get("methods", []):
+                    params = []
+                    for p in method.get("parameters", []):
+                        # ИСПРАВЛЕНИЕ: То же для параметров методов
+                        if isinstance(p, dict):
+                            params.append(MethodParameter(**p))
+                        else:
+                            logger.warning(f"Invalid parameter format: {p}")
+                            continue
+                    
+                    methods.append(MethodSpec(
+                        name=method.get("name", ""),
+                        parameters=params,
+                        return_type=method.get("return_type", "None")
+                    ))
+
+                interfaces.append(InterfaceSpec(
+                    name=iface_data.get("name", ""),
+                    description=iface_data.get("description", ""),
+                    methods=methods
                 ))
 
-            interfaces.append(InterfaceSpec(
-                name=iface_data.get("name", ""),
-                description=iface_data.get("description", ""),
-                methods=methods
-            ))
+            # Парсим связи
+            for rel_data in parsed.get("relations", []):
+                try:
+                    rel_type = RelationType(rel_data.get("relation_type", "dependency"))
+                except ValueError:
+                    rel_type = RelationType.DEPENDENCY
 
-        # Парсим связи
-        for rel_data in parsed.get("relations", []):
-            try:
-                rel_type = RelationType(rel_data.get("relation_type", "dependency"))
-            except ValueError:
-                rel_type = RelationType.DEPENDENCY
-
-            relations.append(ComponentRelation(
-                source=rel_data.get("source", ""),
-                target=rel_data.get("target", ""),
-                relation_type=rel_type,
-                description=rel_data.get("description", "")
-            ))
+                relations.append(ComponentRelation(
+                    source=rel_data.get("source", ""),
+                    target=rel_data.get("target", ""),
+                    relation_type=rel_type,
+                    description=rel_data.get("description", "")
+                ))
 
     return components, interfaces, relations
 
