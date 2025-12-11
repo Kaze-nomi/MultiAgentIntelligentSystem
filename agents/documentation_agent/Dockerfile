@@ -8,16 +8,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Python зависимости
-COPY requirements.txt .
+COPY agents/documentation_agent/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Исходный код
-COPY models.py .
-COPY server.py .
-
-# Пользователь
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-USER appuser
+COPY agents/documentation_agent/models.py .
+COPY agents/documentation_agent/server.py .
+COPY logging_config.py .
 
 # Порт
 EXPOSE 8000

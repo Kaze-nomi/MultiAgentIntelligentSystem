@@ -5,7 +5,9 @@ services:
   
   # OpenRouter MCP Server - прокси к LLM
   openrouter-mcp:
-    build: ./openrouter_mcp
+    build:
+      context: .
+      dockerfile: openrouter_mcp/Dockerfile
     container_name: openrouter-mcp
     ports:
       - "8000:8000"
@@ -15,6 +17,8 @@ services:
       - LOG_LEVEL=INFO
     env_file:
       - .env
+    volumes:
+      - ./logs:/app/logs
     networks:
       - agent-network
     restart: unless-stopped
@@ -31,7 +35,9 @@ services:
   
   # Project Manager - координатор
   project-manager:
-    build: ./agents/project_manager_agent
+    build:
+      context: .
+      dockerfile: agents/project_manager_agent/Dockerfile
     container_name: project-manager
     ports:
       - "8001:8000"
@@ -42,6 +48,8 @@ services:
       - CODE_REVIEWER_URL=http://code-reviewer:8000
       - DOCUMENTATION_URL=http://documentation:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
+    volumes:
+      - ./logs:/app/logs
     networks:
       - agent-network
     restart: unless-stopped
@@ -65,13 +73,17 @@ services:
 
   # Architect Agent - проектирование архитектуры
   architect:
-    build: ./agents/architect_agent
+    build:
+      context: .
+      dockerfile: agents/architect_agent/Dockerfile
     container_name: architect
     ports:
       - "8002:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
+    volumes:
+      - ./logs:/app/logs
     networks:
       - agent-network
     restart: unless-stopped
@@ -86,13 +98,17 @@ services:
 
   # Code Writer Agent - написание кода
   code-writer:
-    build: ./agents/code_writer_agent
+    build:
+      context: .
+      dockerfile: agents/code_writer_agent/Dockerfile
     container_name: code-writer
     ports:
       - "8003:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
+    volumes:
+      - ./logs:/app/logs
     networks:
       - agent-network
     restart: unless-stopped
@@ -107,13 +123,17 @@ services:
 
   # Code Reviewer Agent - проверка кода
   code-reviewer:
-    build: ./agents/code_reviewer_agent
+    build:
+      context: .
+      dockerfile: agents/code_reviewer_agent/Dockerfile
     container_name: code-reviewer
     ports:
       - "8004:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
+    volumes:
+      - ./logs:/app/logs
     networks:
       - agent-network
     restart: unless-stopped
@@ -128,13 +148,17 @@ services:
 
   # Documentation Agent - документация
   documentation:
-    build: ./agents/documentation_agent
+    build:
+      context: .
+      dockerfile: agents/documentation_agent/Dockerfile
     container_name: documentation
     ports:
       - "8005:8000"
     environment:
       - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
+    volumes:
+      - ./logs:/app/logs
     networks:
       - agent-network
     restart: unless-stopped
@@ -176,6 +200,7 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - ./n8n_workflows:/home/node/workflows
+      - ./logs:/app/logs
     networks:
       - agent-network
     restart: unless-stopped

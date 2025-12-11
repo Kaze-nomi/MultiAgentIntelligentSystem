@@ -10,17 +10,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Копирование файлов зависимостей
-COPY requirements.txt .
-
+COPY openrouter_mcp/requirements.txt .
 # Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование исходного кода
-COPY server.py .
-
-# Создание пользователя для безопасности (опционально, но рекомендуется)
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-USER appuser
+COPY openrouter_mcp/server.py .
+COPY logging_config.py .
 
 # Порт приложения
 EXPOSE 8000

@@ -4,6 +4,7 @@ MCP сервер для OpenRouter API
 """
 
 import os
+import sys
 import json
 import logging
 import uuid
@@ -16,15 +17,13 @@ from fastapi.responses import StreamingResponse
 import requests
 from dotenv import load_dotenv
 
+from logging_config import setup_logging
+
 # Загрузка переменных окружения
 load_dotenv()
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging("openrouter_mcp")
 
 # Конфигурация
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")

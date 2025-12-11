@@ -16,6 +16,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 import httpx
 
+from logging_config import setup_logging
+
 from models import (
     FileAction, CodeLanguage,
     NamingConvention, ImportStyle, CodingStyle,
@@ -28,11 +30,7 @@ from models import (
 # CONFIGURATION
 # ============================================================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging("code_writer")
 
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
 LLM_TIMEOUT = 1000

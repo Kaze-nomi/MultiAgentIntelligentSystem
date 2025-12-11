@@ -28,6 +28,8 @@ from fastapi.responses import JSONResponse
 import httpx
 from prometheus_client import Counter, Histogram, Gauge, generate_latest
 
+from logging_config import setup_logging
+
 from models import (
     TaskState, AgentType, TaskPriority, FileAction,
     TechStack, FileToCreate, PipelineStep, Pipeline,
@@ -40,11 +42,7 @@ from models import (
 # CONFIGURATION
 # ============================================================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging("project_manager")
 
 # URLs агентов
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
@@ -1365,7 +1363,7 @@ async def generate_pr_metadata(context: TaskContext) -> Tuple[str, str]:
     return title, description
 
 
-async def generate_summary(context: TaskContext, status: WorkflowStatus) -> str:
+async def generate_summary(context: TaskContext, status: WorkflowStatus, total_duration_seconds: float) -> str:
     """Генерирует краткое резюме для Telegram"""
     
     all_files = context.get_all_files()
@@ -1401,6 +1399,14 @@ async def generate_summary(context: TaskContext, status: WorkflowStatus) -> str:
     
     if context.review_result:
         summary += f"Качество кода: {context.review_result.quality_score}/10\n"
+
+    if total_duration_seconds > 0:
+        minutes = int(total_duration_seconds // 60)
+        seconds = int(total_duration_seconds % 60)
+        if minutes > 0:
+            summary += f"Время выполнения: {minutes} мин {seconds} сек\n"
+        else:
+            summary += f"Время выполнения: {seconds} сек\n"
     
     # Показываем ошибки если есть
     if context.errors:
@@ -1633,10 +1639,11 @@ async def process_workflow(request: WorkflowRequest):
         else:
             context.current_state = TaskState.FAILED
         
-        # 11. Генерация summary
-        summary = await generate_summary(context, workflow_status)
-        
         duration = time.time() - start_time
+
+        # 11. Генерация summary
+        summary = await generate_summary(context, workflow_status, duration)
+        
         TASK_DURATION.observe(duration)
         TASKS_TOTAL.labels(status=workflow_status.value).inc()
         

@@ -42,6 +42,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 import httpx
 
+from logging_config import setup_logging
+
 from models import (
     ComponentType, RelationType, DiagramType, PatternCategory,
     MethodParameter, MethodSpec, PropertySpec, ComponentSpec,
@@ -55,15 +57,11 @@ from models import (
 # CONFIGURATION
 # ============================================================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
 LLM_TIMEOUT = 1000
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL")
+
+logger = setup_logging("architect")
 
 # ============================================================================
 # HTTP CLIENT

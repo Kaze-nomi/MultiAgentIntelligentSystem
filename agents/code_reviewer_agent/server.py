@@ -47,15 +47,13 @@ from models import (
     TechStack
 )
 
+from logging_config import setup_logging
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging("code_reviewer")
 
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
 LLM_TIMEOUT = 1000
