@@ -112,12 +112,13 @@ app = FastAPI(
 
 async def call_llm(
     prompt: str,
+    step: str,
     system_prompt: Optional[str] = None,
     temperature: float = 0.1,  # Низкая температура для консистентности
     max_tokens: int = 100000
 ) -> str:
     """Вызов LLM через OpenRouter MCP"""
-    
+
     if not system_prompt:
         system_prompt = """Ты опытный код-ревьюер с 15+ лет опыта в разработке ПО.
 Ты тщательно проверяешь код на:
@@ -131,30 +132,88 @@ async def call_llm(
 Ты даёшь конкретные, actionable замечания с примерами исправлений.
 Ты справедлив и объективен в оценках.
 Возвращаешь ответы в JSON когда это указано."""
-    
+
+    # Подготовка сообщений для запроса
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+
+    # Логирование начала запроса
+    logger.info(f"step: {step}")
+
+    start_time = time.time()
+
     try:
         response = await http_client.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
                 "model": DEFAULT_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens
             },
             timeout=LLM_TIMEOUT
         )
-        
+
+        duration = time.time() - start_time
+
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
+            response_data = response.json()
+            content = response_data["choices"][0]["message"]["content"]
+
+            # Извлечение информации о токенах
+            usage = response_data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+
+            # Извлечение reasoning (если присутствует)
+            reasoning = None
+            if "reasoning" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning"]
+            elif "reasoning_content" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning_content"]
+
+            # Логирование успешного ответа
+            response_log = {
+                "event": "llm_request_success",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "content": content,
+                "reasoning": reasoning,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.info(json.dumps(response_log, ensure_ascii=False))
+
+            return content
         else:
-            logger.error(f"LLM error: {response.status_code} - {response.text}")
+            # Логирование ошибки
+            error_log = {
+                "event": "llm_request_error",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "status_code": response.status_code,
+                "error_response": response.text,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.error(json.dumps(error_log, ensure_ascii=False))
             return ""
-            
+
     except Exception as e:
-        logger.error(f"LLM call failed: {e}")
+        duration = time.time() - start_time
+        # Логирование исключения
+        exception_log = {
+            "event": "llm_request_exception",
+            "model": DEFAULT_MODEL,
+            "duration_seconds": round(duration, 3),
+            "exception": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+        logger.error(json.dumps(exception_log, ensure_ascii=False))
         return ""
 
 
@@ -259,7 +318,7 @@ async def check_architecture_compliance(
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step="code_reviewer_summary_generation")
     parsed = parse_json_response(response)
     
     issues = []
@@ -358,7 +417,7 @@ async def check_security(
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step="code_reviewer_architecture_check")
     parsed = parse_json_response(response)
     
     issues = []
@@ -492,7 +551,7 @@ async def check_code_quality(
 - Не придирайся к мелочам в critical/high
 """
     
-    response = await call_llm(prompt, max_tokens=100000)
+    response = await call_llm(prompt, step="code_reviewer_quality_check", max_tokens=100000)
     parsed = parse_json_response(response)
     
     issues = []

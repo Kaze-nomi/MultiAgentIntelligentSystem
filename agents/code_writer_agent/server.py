@@ -79,10 +79,11 @@ async def call_llm(
     prompt: str,
     system_prompt: Optional[str] = None,
     temperature: float = 0.2,
-    max_tokens: int = 100000
+    max_tokens: int = 100000,
+    step: str = "code_writer_llm_request"
 ) -> str:
-    """Вызов LLM"""
-    
+    """Вызов LLM через OpenRouter MCP"""
+
     if not system_prompt:
         system_prompt = """Ты опытный программист. Пишешь чистый, рабочий, production-ready код.
 
@@ -93,37 +94,88 @@ async def call_llm(
 4. Обрабатывай ошибки
 5. Следуй архитектуре и стилю проекта
 6. Отвечай ТОЛЬКО в формате JSON когда просят"""
-    
+
+    # Подготовка сообщений для запроса
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+
+    # Логирование начала запроса - только шаг
+    logger.info(f"step: {step}")
+
+    start_time = time.time()
+
     try:
-        logger.info(f"Calling LLM, prompt length: {len(prompt)}")
-        
         response = await http_client.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
                 "model": DEFAULT_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens
             },
             timeout=LLM_TIMEOUT
         )
-        
+
+        duration = time.time() - start_time
+
         if response.status_code == 200:
-            content = response.json()["choices"][0]["message"]["content"]
-            logger.info(f"LLM response length: {len(content)}")
+            response_data = response.json()
+            content = response_data["choices"][0]["message"]["content"]
+
+            # Извлечение информации о токенах
+            usage = response_data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+
+            # Извлечение reasoning (если присутствует)
+            reasoning = None
+            if "reasoning" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning"]
+            elif "reasoning_content" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning_content"]
+
+            # Логирование успешного ответа
+            response_log = {
+                "event": "llm_request_success",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "content": content,
+                "reasoning": reasoning,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.info(json.dumps(response_log, ensure_ascii=False))
+
             return content
         else:
-            logger.error(f"LLM error {response.status_code}: {response.text[:500]}")
+            # Логирование ошибки
+            error_log = {
+                "event": "llm_request_error",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "status_code": response.status_code,
+                "error_response": response.text,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.error(json.dumps(error_log, ensure_ascii=False))
             return ""
-            
-    except httpx.TimeoutException:
-        logger.error("LLM timeout")
-        return ""
+
     except Exception as e:
-        logger.error(f"LLM call failed: {e}")
+        duration = time.time() - start_time
+        # Логирование исключения
+        exception_log = {
+            "event": "llm_request_exception",
+            "model": DEFAULT_MODEL,
+            "duration_seconds": round(duration, 3),
+            "exception": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+        logger.error(json.dumps(exception_log, ensure_ascii=False))
         return ""
 
 
@@ -378,7 +430,7 @@ async def generate_code(
 ВАЖНО: Верни только JSON, без ```json``` блоков!"""
 
     logger.info("Generating code...")
-    response = await call_llm(prompt, max_tokens=100000, temperature=0.3)
+    response = await call_llm(prompt, max_tokens=100000, temperature=0.3, step="code_writer_code_generation")
     
     if not response:
         logger.error("Empty LLM response")
@@ -435,7 +487,7 @@ async def generate_code_simple(
 
 Только JSON, без markdown!"""
 
-    response = await call_llm(prompt, max_tokens=100000, temperature=0.4)
+    response = await call_llm(prompt, max_tokens=100000, temperature=0.4, step="code_writer_code_generation_simple")
     
     if not response:
         return {"files": [], "implementation_notes": ["Simple generation also failed"]}
@@ -531,7 +583,7 @@ async def revise_code(
 
 Только JSON!"""
 
-    response = await call_llm(prompt, max_tokens=100000, temperature=0.2)
+    response = await call_llm(prompt, max_tokens=100000, temperature=0.2, step="code_writer_code_revision")
     result = parse_json_response(response)
     
     if not result or not result.get("files"):
@@ -658,26 +710,39 @@ def post_process_files(
 @app.post("/process", response_model=CodeWriteResponse)
 async def process_code_write(request: CodeWriteRequest):
     """Основной endpoint для написания кода"""
-    
+
     start_time = time.time()
     task_id = str(uuid.uuid4())
-    
+
     try:
+        # Валидация входных данных
+        if not request.task or not request.task.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Task description is required and cannot be empty"
+            )
+
+        if request.action not in ["write_code", "revise_code"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Action must be either 'write_code' or 'revise_code'"
+            )
+
         data = request.data
         action = request.action
-        
+
         logger.info(f"[{task_id[:8]}] Action: {action}, Task: {request.task[:80]}...")
-        
+
         # Извлекаем данные
         tech_stack_data = data.get("tech_stack", {})
         tech_stack = TechStack(**tech_stack_data) if tech_stack_data else TechStack()
-        
+
         repo_context = data.get("repo_context", {})
         architecture = data.get("architecture", {})
-        
+
         # Анализируем стиль
         coding_style = await analyze_coding_style(repo_context, tech_stack)
-        
+
         # Определяем язык
         primary_language = CodeLanguage.UNKNOWN
         if tech_stack.primary_language:
@@ -685,7 +750,7 @@ async def process_code_write(request: CodeWriteRequest):
                 primary_language = CodeLanguage(tech_stack.primary_language.lower())
             except ValueError:
                 pass
-        
+
         # Выполняем действие
         if action == "write_code":
             result = await generate_code(
@@ -695,13 +760,13 @@ async def process_code_write(request: CodeWriteRequest):
                 repo_context=repo_context,
                 coding_style=coding_style
             )
-            
+
         elif action == "revise_code":
             original_code = data.get("original_code", {})
             review_comments = data.get("review_comments", [])
             suggestions = data.get("suggestions", [])
             iteration = data.get("iteration", 1)
-            
+
             result = await revise_code(
                 original_code=original_code,
                 review_issues=review_comments,
@@ -711,26 +776,26 @@ async def process_code_write(request: CodeWriteRequest):
                 coding_style=coding_style,
                 iteration=iteration
             )
-            
+
         else:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unknown action: {action}. Use 'write_code' or 'revise_code'"
             )
-        
+
         # Пост-обработка файлов
         files = post_process_files(result.get("files", []), tech_stack)
-        
+
         duration = time.time() - start_time
         status = "success" if files else "error"
-        
+
         logger.info(f"[{task_id[:8]}] {status}: {len(files)} files in {duration:.1f}s")
-        
+
         # Если нет файлов - логируем детали для диагностики
         if not files:
             logger.error(f"[{task_id[:8]}] No files generated!")
             logger.error(f"[{task_id[:8]}] implementation_notes: {result.get('implementation_notes', [])}")
-        
+
         return CodeWriteResponse(
             task_id=task_id,
             status=status,
@@ -743,7 +808,7 @@ async def process_code_write(request: CodeWriteRequest):
             coding_style_used=coding_style,
             duration_seconds=duration
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -769,7 +834,7 @@ async def generate_single_file(request: Dict[str, Any]):
 
 Верни только код, без JSON обёртки, без ```."""
     
-    content = await call_llm(prompt, max_tokens=100000)
+    content = await call_llm(prompt, max_tokens=100000, step="code_writer_single_file_generation")
     content = clean_code_content(content, detect_language(file_path))
     
     return {

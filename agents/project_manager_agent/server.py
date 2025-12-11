@@ -124,38 +124,97 @@ app = FastAPI(
 async def call_llm(
     prompt: str,
     system_prompt: Optional[str] = None,
-    temperature: float = 0.2
+    temperature: float = 0.2,
+    step: str = "project_manager_llm_request"
 ) -> str:
     """Вызов LLM через OpenRouter MCP"""
-    
+
     if not system_prompt:
         system_prompt = """Ты опытный технический лидер и архитектор ПО.
 Анализируешь задачи, планируешь работу команды, координируешь разработку.
 Всегда возвращаешь ответы в формате JSON когда это указано.
 Принимаешь решения на основе анализа контекста и лучших практик."""
-    
+
+    # Подготовка сообщений для запроса
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+
+    # Логирование начала запроса - только шаг
+    logger.info(f"step: {step}")
+
+    start_time = time.time()
+
     try:
         response = await http_client.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
                 "model": DEFAULT_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": messages,
                 "temperature": temperature
             },
             timeout=LLM_TIMEOUT
         )
-        
+
+        duration = time.time() - start_time
+
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
+            response_data = response.json()
+            content = response_data["choices"][0]["message"]["content"]
+
+            # Извлечение информации о токенах
+            usage = response_data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+
+            # Извлечение reasoning (если присутствует)
+            reasoning = None
+            if "reasoning" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning"]
+            elif "reasoning_content" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning_content"]
+
+            # Логирование успешного ответа
+            response_log = {
+                "event": "llm_request_success",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "content": content,
+                "reasoning": reasoning,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.info(json.dumps(response_log, ensure_ascii=False))
+
+            return content
         else:
-            logger.error(f"LLM error: {response.status_code} - {response.text}")
+            # Логирование ошибки
+            error_log = {
+                "event": "llm_request_error",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "status_code": response.status_code,
+                "error_response": response.text,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.error(json.dumps(error_log, ensure_ascii=False))
             return ""
-            
+
     except Exception as e:
-        logger.error(f"LLM call failed: {e}")
+        duration = time.time() - start_time
+        # Логирование исключения
+        exception_log = {
+            "event": "llm_request_exception",
+            "model": DEFAULT_MODEL,
+            "duration_seconds": round(duration, 3),
+            "exception": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+        logger.error(json.dumps(exception_log, ensure_ascii=False))
         return ""
 
 
@@ -234,8 +293,8 @@ async def analyze_error_with_llm(
 Даёшь чёткие, практичные рекомендации.
 Понимаешь как работают LLM-агенты и их ограничения."""
     
-    response = await call_llm(prompt, system_prompt, temperature=0.3)
-    
+    response = await call_llm(prompt, system_prompt, temperature=0.3, step="error_analysis")
+
     if response:
         context.log_step(
             "error_analysis",
@@ -354,7 +413,7 @@ Pipeline выполнения упал. Нужно создать НОВЫЙ pip
 Создаёшь практичные и надёжные pipeline.
 Всегда отвечаешь валидным JSON."""
     
-    response = await call_llm(prompt, system_prompt, temperature=0.3)
+    response = await call_llm(prompt, system_prompt, temperature=0.3, step="replan_pipeline")
     parsed = parse_json_response(response)
     
     if parsed and "pipeline" in parsed:
@@ -498,7 +557,7 @@ async def analyze_tech_stack(repo_context: Dict[str, Any]) -> TechStack:
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step="tech_analysis")
     parsed = parse_json_response(response)
     
     if parsed:
@@ -618,7 +677,7 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step="plan_pipeline")
     parsed = parse_json_response(response)
     
     if parsed and "pipeline" in parsed:
@@ -1244,7 +1303,7 @@ async def generate_branch_name(context: TaskContext) -> str:
 Верни только имя ветки без кавычек и объяснений.
 """
     
-    response = await call_llm(prompt, temperature=0.1)
+    response = await call_llm(prompt, temperature=0.1, step="branch_generation")
     branch = re.sub(r'[^a-zA-Z0-9-/]', '-', response.strip()[:50])
     branch = re.sub(r'-+', '-', branch).strip('-')
     
@@ -1332,7 +1391,7 @@ async def generate_pr_metadata(context: TaskContext) -> Tuple[str, str]:
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step="pr_metadata_generation")
     parsed = parse_json_response(response)
     
     if parsed:
@@ -1411,8 +1470,8 @@ async def generate_summary(context: TaskContext, status: WorkflowStatus, total_d
     # Показываем ошибки если есть
     if context.errors:
         summary += f"\nОшибок: {len(context.errors)}\n"
-        for err in context.errors[:5]:
-            summary += f"  - {err.get('step', 'unknown')}: {err.get('error', 'unknown error')[:50]}\n"
+        for err in context.errors[:50]:
+            summary += f"  - {err.get('step', 'unknown')}: {err.get('error', 'unknown error')[:100]}\n"
     
     if all_files:
         summary += "\nФайлы:"
@@ -1527,8 +1586,9 @@ async def process_workflow(request: WorkflowRequest):
                     "has_files": has_files
                 }
             )
-            
-            logger.info(f"[{context.task_id[:8]}] Starting error analysis and retry...")
+
+            logger.info(f"[{context.task_id[:8]}] Pipeline failed or no files generated, attempting retry {pipeline_retry_count}/{MAX_PIPELINE_RETRIES}")
+            logger.info(f"Failed agent: {failed_step.agent.value if failed_step else 'unknown'}, error details: {error_details[:200] if error_details else 'unknown'}")
             
             # 6.1. Анализируем ошибку через LLM
             context.log_step("error_analysis", "Analyzing error with LLM...")

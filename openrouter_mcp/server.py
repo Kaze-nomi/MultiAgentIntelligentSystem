@@ -10,6 +10,7 @@ import logging
 import uuid
 from typing import Dict, List, Optional, Any
 import time
+from datetime import datetime
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Header
@@ -113,7 +114,6 @@ async def chat_completion(
     """
     
     try:
-        logger.info(f"Received chat request for model: {chat_request.get('model')}")
         logger.debug(f"Original request: {json.dumps(chat_request, indent=2, ensure_ascii=False)}")
         
         # Проверка обязательных полей
@@ -203,19 +203,42 @@ async def chat_completion(
     except HTTPException:
         raise
     except requests.exceptions.Timeout:
-        logger.error("Request timeout")
+        duration = time.time() - start_time if 'start_time' in locals() else 0
+        error_log = {
+            "event": "llm_response_timeout",
+            "model": request_data.get("model") if 'request_data' in locals() else None,
+            "duration_seconds": round(duration, 3),
+            "timestamp": datetime.now().isoformat()
+        }
+        logger.error(json.dumps(error_log, ensure_ascii=False))
         raise HTTPException(
             status_code=504,
             detail={"error": {"message": "Request to OpenRouter API timed out", "type": "timeout_error"}}
         )
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error: {str(e)}")
+        duration = time.time() - start_time if 'start_time' in locals() else 0
+        error_log = {
+            "event": "llm_response_error",
+            "model": request_data.get("model") if 'request_data' in locals() else None,
+            "duration_seconds": round(duration, 3),
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+        logger.error(json.dumps(error_log, ensure_ascii=False))
         raise HTTPException(
             status_code=503,
             detail={"error": {"message": f"Connection error to OpenRouter API: {str(e)}", "type": "connection_error"}}
         )
     except Exception as e:
-        logger.exception(f"Unexpected error: {str(e)}")
+        duration = time.time() - start_time if 'start_time' in locals() else 0
+        error_log = {
+            "event": "llm_response_exception",
+            "model": request_data.get("model") if 'request_data' in locals() else None,
+            "duration_seconds": round(duration, 3),
+            "exception": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+        logger.error(json.dumps(error_log, ensure_ascii=False))
         raise HTTPException(
             status_code=500,
             detail={"error": {"message": f"Internal server error: {str(e)}", "type": "server_error"}}

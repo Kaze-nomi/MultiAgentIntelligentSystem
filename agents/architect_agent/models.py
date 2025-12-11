@@ -77,7 +77,7 @@ class MethodParameter(BaseModel):
     name: str
     type: str
     required: bool = True
-    default: Optional[str] = None
+    default: Optional[Any] = None
     description: str = ""
 
 

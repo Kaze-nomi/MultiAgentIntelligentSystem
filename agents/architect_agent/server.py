@@ -101,10 +101,11 @@ async def call_llm(
     prompt: str,
     system_prompt: Optional[str] = None,
     temperature: float = 0.3,
-    max_tokens: int = 100000
+    max_tokens: int = 100000,
+    step_name: str = "llm_request"
 ) -> str:
     """Вызов LLM через OpenRouter MCP"""
-    
+
     if not system_prompt:
         system_prompt = """Ты опытный архитектор ПО с 20+ лет опыта проектирования систем.
 Ты отлично знаешь:
@@ -121,30 +122,88 @@ async def call_llm(
 
 Всегда учитываешь существующий код и стиль проекта.
 Возвращаешь ответы в JSON когда это указано."""
-    
+
+    # Подготовка сообщений для запроса
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+
+    # Логирование начала запроса - только шаг
+    logger.info(f"step: {step_name}")
+
+    start_time = time.time()
+
     try:
         response = await http_client.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
                 "model": DEFAULT_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens
             },
             timeout=LLM_TIMEOUT
         )
-        
+
+        duration = time.time() - start_time
+
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
+            response_data = response.json()
+            content = response_data["choices"][0]["message"]["content"]
+
+            # Извлечение информации о токенах
+            usage = response_data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+
+            # Извлечение reasoning (если присутствует)
+            reasoning = None
+            if "reasoning" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning"]
+            elif "reasoning_content" in response_data["choices"][0]["message"]:
+                reasoning = response_data["choices"][0]["message"]["reasoning_content"]
+
+            # Логирование успешного ответа - полностью логируем ответы и reasoning
+            response_log = {
+                "event": "llm_request_success",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "content": content,
+                "reasoning": reasoning,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.info(json.dumps(response_log, ensure_ascii=False))
+
+            return content
         else:
-            logger.error(f"LLM error: {response.status_code} - {response.text}")
+            # Логирование ошибки
+            error_log = {
+                "event": "llm_request_error",
+                "model": DEFAULT_MODEL,
+                "duration_seconds": round(duration, 3),
+                "status_code": response.status_code,
+                "error_response": response.text,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.error(json.dumps(error_log, ensure_ascii=False))
             return ""
-            
+
     except Exception as e:
-        logger.error(f"LLM call failed: {e}")
+        duration = time.time() - start_time
+        # Логирование исключения
+        exception_log = {
+            "event": "llm_request_exception",
+            "model": DEFAULT_MODEL,
+            "duration_seconds": round(duration, 3),
+            "exception": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+        logger.error(json.dumps(exception_log, ensure_ascii=False))
         return ""
 
 
@@ -260,9 +319,9 @@ async def analyze_existing_architecture(
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step_name="analyze_existing_architecture")
     parsed = parse_json_response(response)
-    
+
     if parsed:
         return ExistingArchitecture(
             pattern=parsed.get("pattern", "unknown"),
@@ -272,7 +331,7 @@ async def analyze_existing_architecture(
             strengths=parsed.get("strengths", []),
             weaknesses=parsed.get("weaknesses", [])
         )
-    
+
     return ExistingArchitecture()
 
 
@@ -403,13 +462,13 @@ async def design_components(
 }}
 """
     
-    response = await call_llm(prompt, max_tokens=100000)
+    response = await call_llm(prompt, max_tokens=100000, step_name="design_components")
     parsed = parse_json_response(response)
-    
+
     components = []
     interfaces = []
     relations = []
-    
+
     if parsed:
         # Парсим компоненты
         for comp_data in parsed.get("components", []):
@@ -417,14 +476,21 @@ async def design_components(
                 comp_type = ComponentType(comp_data.get("type", "class"))
             except ValueError:
                 comp_type = ComponentType.CLASS
-            
+
             properties = []
             for prop in comp_data.get("properties", []):
                 properties.append(PropertySpec(**prop))
-            
+
             methods = []
             for method in comp_data.get("methods", []):
-                params = [MethodParameter(**p) for p in method.get("parameters", [])]
+                params = []
+                for p in method.get("parameters", []):
+                    # Handle default values that might be lists
+                    default_val = p.get("default")
+                    if isinstance(default_val, list):
+                        # Convert list to string representation for storage
+                        default_val = str(default_val)
+                    params.append(MethodParameter(**{**p, "default": default_val}))
                 methods.append(MethodSpec(
                     name=method.get("name", ""),
                     description=method.get("description", ""),
@@ -434,7 +500,7 @@ async def design_components(
                     is_static=method.get("is_static", False),
                     raises=method.get("raises", [])
                 ))
-            
+
             components.append(ComponentSpec(
                 name=comp_data.get("name", ""),
                 type=comp_type,
@@ -447,7 +513,7 @@ async def design_components(
                 implements=comp_data.get("implements", []),
                 layer=comp_data.get("layer", "")
             ))
-        
+
         # Парсим интерфейсы
         for iface_data in parsed.get("interfaces", []):
             methods = []
@@ -458,27 +524,27 @@ async def design_components(
                     parameters=params,
                     return_type=method.get("return_type", "None")
                 ))
-            
+
             interfaces.append(InterfaceSpec(
                 name=iface_data.get("name", ""),
                 description=iface_data.get("description", ""),
                 methods=methods
             ))
-        
+
         # Парсим связи
         for rel_data in parsed.get("relations", []):
             try:
                 rel_type = RelationType(rel_data.get("relation_type", "dependency"))
             except ValueError:
                 rel_type = RelationType.DEPENDENCY
-            
+
             relations.append(ComponentRelation(
                 source=rel_data.get("source", ""),
                 target=rel_data.get("target", ""),
                 relation_type=rel_type,
                 description=rel_data.get("description", "")
             ))
-    
+
     return components, interfaces, relations
 
 
@@ -563,11 +629,11 @@ async def plan_file_structure(
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step_name="plan_file_structure")
     parsed = parse_json_response(response)
-    
+
     files = []
-    
+
     if parsed:
         for file_data in parsed.get("files", []):
             files.append(FileSpec(
@@ -578,7 +644,7 @@ async def plan_file_structure(
                 imports_from=file_data.get("imports_from", []),
                 exports=file_data.get("exports", [])
             ))
-    
+
     return files
 
 
@@ -641,18 +707,18 @@ async def select_patterns(
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step_name="select_patterns")
     parsed = parse_json_response(response)
-    
+
     patterns = []
-    
+
     if parsed:
         for pattern_data in parsed.get("patterns", []):
             try:
                 category = PatternCategory(pattern_data.get("category", "behavioral"))
             except ValueError:
                 category = PatternCategory.BEHAVIORAL
-            
+
             patterns.append(PatternRecommendation(
                 name=pattern_data.get("name", ""),
                 category=category,
@@ -661,7 +727,7 @@ async def select_patterns(
                 components_affected=pattern_data.get("components_affected", []),
                 example=pattern_data.get("example", "")
             ))
-    
+
     return patterns
 
 
@@ -724,12 +790,12 @@ async def plan_integration(
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step_name="plan_integration")
     parsed = parse_json_response(response)
-    
+
     integration_points = []
     dependencies = []
-    
+
     if parsed:
         for point_data in parsed.get("integration_points", []):
             integration_points.append(IntegrationPoint(
@@ -739,7 +805,7 @@ async def plan_integration(
                 description=point_data.get("description", ""),
                 changes_required=point_data.get("changes_required", [])
             ))
-        
+
         for dep_data in parsed.get("external_dependencies", []):
             dependencies.append(ExternalDependency(
                 name=dep_data.get("name", ""),
@@ -747,7 +813,7 @@ async def plan_integration(
                 purpose=dep_data.get("purpose", ""),
                 package_manager=dep_data.get("package_manager", "")
             ))
-    
+
     return integration_points, dependencies
 
 
@@ -815,11 +881,11 @@ async def generate_component_diagram(
 Без markdown блоков, без пояснений.
 """
     
-    response = await call_llm(prompt, temperature=0.2)
-    
+    response = await call_llm(prompt, temperature=0.2, step_name="generate_component_diagram")
+
     # Извлекаем PlantUML код
     plantuml_code = extract_plantuml(response)
-    
+
     if plantuml_code:
         return DiagramSpec(
             type=DiagramType.COMPONENT,
@@ -828,7 +894,7 @@ async def generate_component_diagram(
             plantuml_code=plantuml_code,
             svg_url=generate_plantuml_url(plantuml_code)
         )
-    
+
     return None
 
 
@@ -973,12 +1039,12 @@ async def generate_recommendations(
 }}
 """
     
-    response = await call_llm(prompt)
+    response = await call_llm(prompt, step_name="generate_recommendations")
     parsed = parse_json_response(response)
-    
+
     if parsed:
         return parsed.get("recommendations", []), parsed.get("risks", [])
-    
+
     return [], []
 
 
