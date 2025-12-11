@@ -342,7 +342,9 @@ async def generate_code(
     architecture: Dict[str, Any],
     tech_stack: TechStack,
     repo_context: Dict[str, Any],
-    coding_style: CodingStyle
+    coding_style: CodingStyle,
+    file_to_generate: Dict[str, Any],
+    generated_files: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """
     Генерирует код на основе архитектуры
@@ -353,7 +355,7 @@ async def generate_code(
     interfaces = architecture.get("interfaces", [])
     patterns = architecture.get("patterns", [])
     integration_points = architecture.get("integration_points", [])
-    
+
     # Форматируем компоненты для промпта
     components_desc = []
     for comp in components:
@@ -363,16 +365,27 @@ async def generate_code(
             method_names = [m.get('name', '') for m in methods[:5]]
             desc += f"\n  Методы: {', '.join(method_names)}"
         components_desc.append(desc)
-    
+
     # Форматируем структуру файлов
     files_desc = []
     for fs in file_structure:
         path = fs.get('path', '')
         contains = fs.get('contains', [])
-        if path:  
+        if path:
             files_desc.append(f"- {path}: содержит {', '.join(contains) if contains else 'модуль'}")
-    
-    prompt = f"""Напиши полный рабочий код для реализации задачи.
+
+    # Форматируем уже сгенерированные файлы для контекста
+    generated_files_desc = []
+    for gf in generated_files:
+        path = gf.get('path', '')
+        description = gf.get('description', '')
+        if path:
+            generated_files_desc.append(f"- {path}: {description}")
+
+    # Получаем путь к файлу для генерации
+    file_path = file_to_generate.get('path', '')
+
+    prompt = f"""Напиши полный рабочий код для одного файла: {file_path}
 
 ## ЗАДАЧА
 {task}
@@ -382,6 +395,9 @@ async def generate_code(
 
 ## СТРУКТУРА ФАЙЛОВ
 {chr(10).join(files_desc[:100]) if files_desc else 'Определи структуру самостоятельно'}
+
+## УЖЕ СГЕНЕРИРОВАННЫЕ ФАЙЛЫ (КОНТЕКСТ)
+{chr(10).join(generated_files_desc) if generated_files_desc else 'Это первый файл'}
 
 ## ИНТЕРФЕЙСЫ
 {json.dumps(interfaces, indent=2, ensure_ascii=False) if interfaces else 'Определи интерфейсы самостоятельно'}
@@ -395,32 +411,31 @@ async def generate_code(
 
 ## СТИЛЬ КОДА
 - Именование переменных: {coding_style.naming.variables}
-- Именование функций: {coding_style.naming.functions}  
+- Именование функций: {coding_style.naming.functions}
 - Именование классов: {coding_style.naming.classes}
 - Docstrings: {coding_style.docstring_format}
 - Отступы: {coding_style.indent_size} пробела
 
 ## ТРЕБОВАНИЯ
 1. Пиши ПОЛНЫЙ РАБОЧИЙ код - НЕ заглушки, НЕ TODO, НЕ pass
-2. Каждый файл должен быть законченным и работающим
+2. Файл должен быть законченным и работающим
 3. Добавляй все необходимые импорты в начале файла
 4. Добавляй docstrings к классам и функциям
 5. Обрабатывай возможные ошибки
 6. Код должен соответствовать указанному стилю
-7. Выбирай расположения файлов в соответствии с архитектурой, не суй всё в корневую директорию, если этого не требует архитектура
+7. Учитывай уже сгенерированные файлы при написании кода
+8. Выбирай расположения файлов в соответствии с архитектурой, не суй всё в корневую директорию, если этого не требует архитектура
 
 ## ФОРМАТ ОТВЕТА
 Верни JSON объект (без markdown блоков):
 
 {{
-    "files": [
-        {{
-            "path": "путь/к/файлу.расширение",
-            "content": "полный код файла",
-            "language": "язык программирования",
-            "description": "описание назначения файла"
-        }}
-    ],
+    "file": {{
+        "path": "{file_path}",
+        "content": "полный код файла",
+        "language": "язык программирования",
+        "description": "описание назначения файла"
+    }},
     "implementation_notes": [
         "заметка о реализации 1",
         "заметка о реализации 2"
@@ -437,19 +452,22 @@ async def generate_code(
         return {"files": [], "implementation_notes": ["LLM returned empty response"]}
     
     result = parse_json_response(response)
-    
+
     if not result:
         logger.error("Failed to parse response")
         return {"files": [], "implementation_notes": ["Failed to parse LLM response"]}
-    
-    files = result.get("files", [])
-    
-    if not files:
-        logger.warning("No files in parsed response")
+
+    file_data = result.get("file")
+    if not file_data:
+        logger.warning("No file in parsed response")
         # Попробуем ещё раз с более простым промптом
         return await generate_code_simple(task, tech_stack, coding_style)
-    
-    logger.info(f"Generated {len(files)} files")
+
+    # Возвращаем в формате массива для совместимости
+    files = [file_data]
+    result["files"] = files
+
+    logger.info(f"Generated 1 file: {file_data.get('path', 'unknown')}")
     return result
 
 
@@ -651,6 +669,7 @@ def post_process_files(
     files: List[Dict[str, Any]],
     tech_stack: TechStack
 ) -> List[CodeFile]:
+    """Пост-обработка файлов (теперь обрабатывает как массивы файлов, так и одиночные файлы)"""
     """Пост-обработка файлов"""
     
     processed = []
@@ -753,13 +772,28 @@ async def process_code_write(request: CodeWriteRequest):
 
         # Выполняем действие
         if action == "write_code":
-            result = await generate_code(
-                task=request.task,
-                architecture=architecture,
-                tech_stack=tech_stack,
-                repo_context=repo_context,
-                coding_style=coding_style
-            )
+            result = {}
+            result["files"] = []
+            result["implementation_notes"] = []
+            file_structure = architecture.get("file_structure", [])
+            generated_files = []  # Накопленный контекст сгенерированных файлов
+            for fs in file_structure:
+                result_fs = await generate_code(
+                    task=request.task,
+                    architecture=architecture,
+                    tech_stack=tech_stack,
+                    repo_context=repo_context,
+                    coding_style=coding_style,
+                    file_to_generate=fs,
+                    generated_files=generated_files
+                )
+
+                # Добавляем сгенерированный файл в контекст для следующих файлов
+                if result_fs.get("file"):
+                    generated_files.append(result_fs["file"])
+
+                result["files"].extend(result_fs["files"])
+                result["implementation_notes"].extend(result_fs["implementation_notes"])
 
         elif action == "revise_code":
             original_code = data.get("original_code", {})

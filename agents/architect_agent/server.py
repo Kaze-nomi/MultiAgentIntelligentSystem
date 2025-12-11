@@ -477,6 +477,25 @@ async def design_components(
             except ValueError:
                 comp_type = ComponentType.CLASS
 
+
+# default
+#   Input should be a valid string [type=string_type, input_value=1000, input_type=int]
+#     For further information visit https://errors.pydantic.dev/2.5/v/string_type
+# Traceback (most recent call last):
+#   File "/app/server.py", line 1165, in process_architecture
+#     existing_arch, design = await design_architecture(
+#                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "/app/server.py", line 1092, in design_architecture
+#     components, interfaces, relations = await design_components(
+#                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "/app/server.py", line 482, in design_components
+#     properties.append(PropertySpec(**prop))
+#                       ^^^^^^^^^^^^^^^^^^^^
+#   File "/usr/local/lib/python3.11/site-packages/pydantic/main.py", line 164, in __init__
+#     __pydantic_self__.__pydantic_validator__.validate_python(data, self_instance=__pydantic_self__)
+# pydantic_core._pydantic_core.ValidationError: 1 validation error for PropertySpec
+# default
+#   Input should be a valid string [type=string_type, input_value=1000, input_type=int]
             properties = []
             for prop in comp_data.get("properties", []):
                 properties.append(PropertySpec(**prop))

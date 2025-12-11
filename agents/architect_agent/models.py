@@ -103,7 +103,7 @@ class PropertySpec(BaseModel):
     type: str
     description: str = ""
     required: bool = True
-    default: Optional[str] = None
+    default: Optional[Any] = None
     is_private: bool = False
     is_readonly: bool = False
     
