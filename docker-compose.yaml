@@ -182,12 +182,9 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - N8N_ENV_FILE=.env
       - N8N_PROTOCOL=http
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
-      - N8N_EDITOR_BASE_URL=http://localhost:5678
-      - WEBHOOK_URL=https://localhost:5678
       - N8N_METRICS=true
       - N8N_LOG_LEVEL=info
       - N8N_USER_MANAGEMENT_DISABLED=true
@@ -195,6 +192,10 @@ services:
       - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
       - EXECUTIONS_TIMEOUT=50000
       - EXECUTIONS_TIMEOUT_MAX=100000
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_GIT_NODE_DISABLE_BARE_REPOS=true
+    command: start --tunnel
     env_file:
       - .env
     volumes:

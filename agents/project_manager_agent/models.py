@@ -398,4 +398,31 @@ class WorkflowResponse(BaseModel):
     errors: List[Dict[str, Any]] = Field(default_factory=list)
     
     # Метрики
-    total_duration_seconds: float = 0.0
+    total_duration_seconds: float = 0.
+    
+class PRReviewRequest(BaseModel):
+    """Запрос на ревью PR"""
+    pr_number: int
+    pr_title: str
+    pr_description: str = ""
+    pr_url: str
+    repo_owner: str
+    repo_name: str
+    changed_files: List[Dict[str, Any]]
+    file_contents: Dict[str, str]
+    head_branch: str
+    base_branch: str
+
+
+class PRReviewResponse(BaseModel):
+    """Ответ ревью PR"""
+    pr_number: int
+    pr_title: str
+    pr_url: str
+    approved: bool
+    review_summary: str
+    issues: List[str]
+    suggestions: List[str]
+    quality_score: int
+    files_reviewed: int
+    review_body: str  # Готовый текст для GitHub review

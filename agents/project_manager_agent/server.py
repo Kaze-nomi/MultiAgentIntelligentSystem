@@ -35,7 +35,8 @@ from models import (
     TechStack, FileToCreate, PipelineStep, Pipeline,
     ArchitectureResult, CodeResult, ReviewResult, ReviewIssue,
     DocumentationResult, TaskContext, AgentCallResult,
-    WorkflowRequest, WorkflowResponse
+    WorkflowRequest, WorkflowResponse,
+    PRReviewRequest, PRReviewResponse
 )
 
 # ============================================================================
@@ -1799,6 +1800,283 @@ async def process_workflow(request: WorkflowRequest):
         
     finally:
         ACTIVE_TASKS.dec()
+
+# ============================================================================
+# PR REVIEW ENDPOINT
+# ============================================================================
+
+@app.post("/review/pr", response_model=PRReviewResponse)
+async def review_pull_request(request: PRReviewRequest):
+    """
+    Endpoint для ревью Pull Request
+    Вызывается из n8n при создании/обновлении PR
+    """
+    
+    start_time = time.time()
+    
+    logger.info(f"PR Review request: #{request.pr_number} - {request.pr_title}")
+    
+    try:
+        # 1. Подготавливаем данные для Code Reviewer
+        files_for_review = []
+        for file_info in request.changed_files:
+            filename = file_info.get("filename", "")
+            content = request.file_contents.get(filename, "")
+            patch = file_info.get("patch", "")
+            
+            files_for_review.append({
+                "path": filename,
+                "content": content,
+                "patch": patch,
+                "status": file_info.get("status", "modified"),
+                "additions": file_info.get("additions", 0),
+                "deletions": file_info.get("deletions", 0)
+            })
+        
+        # 2. Формируем запрос к Code Reviewer
+        review_request = {
+            "task": f"Review PR #{request.pr_number}: {request.pr_title}",
+            "action": "review_pr",
+            "data": {
+                "pr_info": {
+                    "number": request.pr_number,
+                    "title": request.pr_title,
+                    "description": request.pr_description,
+                    "url": request.pr_url,
+                    "head_branch": request.head_branch,
+                    "base_branch": request.base_branch
+                },
+                "code": {
+                    "files": files_for_review
+                },
+                "repo_context": {
+                    "owner": request.repo_owner,
+                    "name": request.repo_name
+                }
+            },
+            "priority": "high"
+        }
+        
+        # 3. Вызываем Code Reviewer
+        logger.info(f"Calling Code Reviewer for PR #{request.pr_number}")
+        
+        review_result = await call_agent(
+            AgentType.CODE_REVIEWER,
+            review_request,
+            timeout=300  # 5 минут на ревью
+        )
+        
+        if review_result.status != "success":
+            logger.error(f"Code Reviewer failed: {review_result.error}")
+            
+            # Возвращаем базовый ответ при ошибке
+            return PRReviewResponse(
+                pr_number=request.pr_number,
+                pr_title=request.pr_title,
+                pr_url=request.pr_url,
+                approved=False,
+                review_summary=f"⚠️ Не удалось выполнить автоматическое ревью: {review_result.error}",
+                issues=["Ошибка при выполнении автоматического ревью"],
+                suggestions=["Требуется ручное ревью"],
+                quality_score=0,
+                files_reviewed=len(files_for_review),
+                review_body=f"## ⚠️ Автоматическое ревью не выполнено\n\nОшибка: {review_result.error}\n\nТребуется ручное ревью."
+            )
+        
+        # 4. Парсим результат
+        result_data = review_result.result.get("result", review_result.result)
+        
+        approved = result_data.get("approved", False)
+        quality_score = result_data.get("quality_score", 5)
+        issues_raw = result_data.get("issues", [])
+        suggestions = result_data.get("suggestions", [])
+        summary = result_data.get("summary", "")
+        
+        # Преобразуем issues в строки
+        issues = []
+        for issue in issues_raw:
+            if isinstance(issue, dict):
+                severity = issue.get("severity", "medium")
+                title = issue.get("title", "")
+                description = issue.get("description", "")
+                file_path = issue.get("file_path", "")
+                line = issue.get("line_number", "")
+                
+                issue_text = f"[{severity.upper()}] {title}"
+                if file_path:
+                    issue_text += f" ({file_path}"
+                    if line:
+                        issue_text += f":{line}"
+                    issue_text += ")"
+                if description:
+                    issue_text += f": {description}"
+                issues.append(issue_text)
+            else:
+                issues.append(str(issue))
+        
+        # 5. Формируем красивое тело ревью для GitHub
+        review_body = await format_github_review_body(
+            pr_title=request.pr_title,
+            approved=approved,
+            quality_score=quality_score,
+            summary=summary,
+            issues=issues_raw,
+            suggestions=suggestions,
+            files_reviewed=len(files_for_review),
+            duration=time.time() - start_time
+        )
+        
+        logger.info(f"PR #{request.pr_number} review completed: approved={approved}, score={quality_score}")
+        
+        return PRReviewResponse(
+            pr_number=request.pr_number,
+            pr_title=request.pr_title,
+            pr_url=request.pr_url,
+            approved=approved,
+            review_summary=summary,
+            issues=issues,
+            suggestions=suggestions,
+            quality_score=quality_score,
+            files_reviewed=len(files_for_review),
+            review_body=review_body
+        )
+        
+    except Exception as e:
+        logger.exception(f"PR Review error: {e}")
+        
+        return PRReviewResponse(
+            pr_number=request.pr_number,
+            pr_title=request.pr_title,
+            pr_url=request.pr_url,
+            approved=False,
+            review_summary=f"Ошибка ревью: {str(e)}",
+            issues=[f"Критическая ошибка: {str(e)}"],
+            suggestions=["Требуется ручное ревью"],
+            quality_score=0,
+            files_reviewed=0,
+            review_body=f"## ❌ Ошибка автоматического ревью\n\n```\n{str(e)}\n```"
+        )
+
+
+async def format_github_review_body(
+    pr_title: str,
+    approved: bool,
+    quality_score: int,
+    summary: str,
+    issues: List[Dict],
+    suggestions: List[str],
+    files_reviewed: int,
+    duration: float
+) -> str:
+    """Форматирует тело ревью для GitHub"""
+    
+    # Эмодзи статуса
+    if approved:
+        status_emoji = "✅"
+        status_text = "Approved"
+    elif quality_score >= 7:
+        status_emoji = "👍"
+        status_text = "Looks Good (minor issues)"
+    elif quality_score >= 5:
+        status_emoji = "⚠️"
+        status_text = "Needs Attention"
+    else:
+        status_emoji = "❌"
+        status_text = "Changes Requested"
+    
+    # Формируем тело
+    body = f"""## {status_emoji} Automated Code Review
+
+**Status:** {status_text}
+**Quality Score:** {quality_score}/10
+**Files Reviewed:** {files_reviewed}
+**Review Time:** {duration:.1f}s
+
+---
+
+### 📝 Summary
+
+{summary if summary else "No summary available."}
+
+"""
+    
+    # Issues
+    if issues:
+        body += "### ⚠️ Issues Found\n\n"
+        
+        # Группируем по severity
+        critical = [i for i in issues if isinstance(i, dict) and i.get("severity") == "critical"]
+        high = [i for i in issues if isinstance(i, dict) and i.get("severity") == "high"]
+        medium = [i for i in issues if isinstance(i, dict) and i.get("severity") == "medium"]
+        low = [i for i in issues if isinstance(i, dict) and i.get("severity") == "low"]
+        
+        if critical:
+            body += "#### 🔴 Critical\n"
+            for issue in critical:
+                body += format_issue_markdown(issue)
+            body += "\n"
+        
+        if high:
+            body += "#### 🟠 High\n"
+            for issue in high:
+                body += format_issue_markdown(issue)
+            body += "\n"
+        
+        if medium:
+            body += "#### 🟡 Medium\n"
+            for issue in medium:
+                body += format_issue_markdown(issue)
+            body += "\n"
+        
+        if low:
+            body += "#### 🟢 Low\n"
+            for issue in low:
+                body += format_issue_markdown(issue)
+            body += "\n"
+    
+    # Suggestions
+    if suggestions:
+        body += "### 💡 Suggestions\n\n"
+        for suggestion in suggestions:
+            body += f"- {suggestion}\n"
+        body += "\n"
+    
+    body += """---
+*This review was generated automatically by the AI Code Review System.*
+"""
+    
+    return body
+
+
+def format_issue_markdown(issue: Dict) -> str:
+    """Форматирует issue в markdown"""
+    title = issue.get("title", "Unknown issue")
+    description = issue.get("description", "")
+    file_path = issue.get("file_path", "")
+    line = issue.get("line_number", "")
+    suggestion = issue.get("suggestion", "")
+    code_snippet = issue.get("code_snippet", "")
+    
+    result = f"- **{title}**"
+    
+    if file_path:
+        if line:
+            result += f" (`{file_path}:{line}`)"
+        else:
+            result += f" (`{file_path}`)"
+    
+    result += "\n"
+    
+    if description:
+        result += f"  {description}\n"
+    
+    if code_snippet:
+        result += f"  ```\n  {code_snippet}\n  ```\n"
+    
+    if suggestion:
+        result += f"  💡 *Suggestion:* {suggestion}\n"
+    
+    return result
 
 # ============================================================================
 # ADDITIONAL ENDPOINTS
