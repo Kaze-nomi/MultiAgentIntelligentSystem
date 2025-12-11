@@ -834,7 +834,7 @@ async def process_code_write(request: CodeWriteRequest):
             task_id=task_id,
             status=status,
             files=[f.dict() for f in files],
-            implementation_notes=result.get("implementation_notes", []),
+            implementation_notes=result.get("implementation_notes", []),    
             changes_made=[],
             addressed_issues=result.get("addressed_issues", []),
             unaddressed_issues=result.get("unaddressed_issues", []),

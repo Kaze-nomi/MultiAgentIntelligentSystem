@@ -298,7 +298,7 @@ async def analyze_error_with_llm(
     if response:
         context.log_step(
             "error_analysis",
-            "LLM проанализировал ошибку",
+            "LLM analysis completed",
             {"analysis_preview": response[:200]}
         )
         logger.info(f"[{context.task_id[:8]}] Error analysis completed")
