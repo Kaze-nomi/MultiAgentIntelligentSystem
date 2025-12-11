@@ -1,0 +1,23 @@
+@startuml
+title Music Composition System Component Diagram
+
+package "Business Layer" {
+    component "Music Composer Agent" as MCA <<service>> #blue
+    component "Project Manager Agent" as PMA <<service>> #blue
+    interface "IMusicComposer" as IMC
+}
+
+package "Data Layer" {
+    class "Musical Composition Model" as MCM #green
+}
+
+component "OpenRouter MCP Server" as ORMS #orange
+component "Logging Config" as LC #yellow
+
+MCA ..|> IMC
+MCA --> ORMS : dependency
+MCA --> LC : dependency
+MCA --> MCM : dependency
+PMA --> MCA : dependency
+
+@enduml
