@@ -1,0 +1,19 @@
+@startuml
+title Bublik Class Diagram
+
+class pydantic.BaseModel {
+}
+
+class Bublik {
+  - id: uuid.UUID
+  - name: str
+  - topping: str | None
+  - price: float
+  - diameter_cm: float
+  - is_sweet: bool
+  - is_tasty: bool
+}
+
+pydantic.BaseModel <|-- Bublik
+
+@enduml
