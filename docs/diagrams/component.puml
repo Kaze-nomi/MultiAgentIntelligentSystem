@@ -1,0 +1,27 @@
+@startuml
+title Component Architecture Diagram
+
+' Define styles for different component types
+skinparam component {
+  BackgroundColor<<Domain>> LightGreen
+  BorderColor<<Domain>> DarkOliveGreen
+}
+
+skinparam component {
+  BackgroundColor<<External>> LightGrey
+  BorderColor<<External>> Grey
+}
+
+' Define packages for layers
+package "Domain Layer" {
+    [Bublik] <<Domain>>
+}
+
+package "External Libraries" {
+    [pydantic.BaseModel] <<External>>
+}
+
+' Define relationships
+[Bublik] --|> [pydantic.BaseModel]
+
+@enduml
