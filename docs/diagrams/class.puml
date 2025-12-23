@@ -1,0 +1,19 @@
+@startuml
+title Arbuz Client Class Diagram
+
+interface IArbuzClient {
+    + get_data(): dict
+    + post_data(): dict
+}
+
+class ArbuzClient {
+    - base_url: str
+    - api_key: str
+    - timeout: int
+    + get_data(endpoint, params): dict
+    + post_data(endpoint, data): dict
+}
+
+ArbuzClient ..|> IArbuzClient
+
+@enduml
