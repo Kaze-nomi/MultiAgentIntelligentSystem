@@ -1,0 +1,8 @@
+@startuml
+title Component Diagram
+package "Infrastructure" {
+    component ArbuzClient as ArbuzClient #lightblue
+    interface IArbuzClient as IArbuzClient #lightgreen
+}
+ArbuzClient ..|> IArbuzClient : implementation
+@enduml
