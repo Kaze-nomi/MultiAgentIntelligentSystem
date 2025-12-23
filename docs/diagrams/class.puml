@@ -1,0 +1,12 @@
+    *   Start with `@startuml`.
+    *   Add a descriptive title. Something like "Архитектура системы оценки спелости арбузов" (Architecture of the Watermelon Ripeness Evaluation System) sounds appropriate.
+    *   Define the enum `RipenessStatus`. It extends `str, Enum`. In PlantUML, I'll represent this as `enum RipenessStatus { ... }` and then add the inheritance link `str <|-- RipenessStatus` and `Enum <|-- RipenessStatus`. However, PlantUML doesn't have a built-in `str` or `Enum` class to link from. A better way to represent `extends "str, Enum"` is to just note it in a comment or as a stereotype. A simpler and more common approach is to just define the enum and let the code comment handle the specifics. I'll just define the enum and add a note. The user didn't provide the enum values, so I'll leave it empty as per the input.
+    *   Define the interface `IRipenessEvaluator`. It has one method `evaluate() : RipenessStatus`.
+    *   Define the class `Watermelon`. It's a Pydantic model, so it extends `pydantic.BaseModel`. I'll represent this with an inheritance link. It has several properties, all public (`+`).
+    *   Define the class `RipenessEvaluator`. It's a service. It implements `IRipenessEvaluator` and has properties and a method. I'll use the implementation link (`<|..`).
+    *   Define the class `pydantic.BaseModel`. This is an external dependency, so I'll just create a simple class representation for it to show the inheritance relationship.
+    *   Connect the classes according to the relationships:
+        *   `pydantic.BaseModel <|-- Watermelon`
+        *   `IRipenessEvaluator <|.. RipenessEvaluator`
+        *   The `RipenessEvaluator.evaluate` method takes a `watermelon` parameter. This is a dependency relationship. I can represent this with a dashed arrow: `RipenessEvaluator ..> Watermelon : uses > evaluate(watermelon)`.
+    *   End with `@enduml`.
