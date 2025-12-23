@@ -1,0 +1,56 @@
+@startuml
+title System Architecture: Watermelon Ripeness Evaluation
+
+skinparam package {
+    BackgroundColor LightGray
+    BorderColor Black
+    FontColor Black
+}
+
+skinparam class {
+    BackgroundColor<<domain>> LightGreen
+    BackgroundColor<<service>> LightBlue
+    BackgroundColor<<enum>> LightYellow
+    BorderColor Black
+    ArrowColor Black
+}
+
+package "Domain" {
+    class Watermelon <<domain>> {
+        +weight: float
+        +size: str
+    }
+    enum RipenessStatus <<enum>> {
+        UNRIPE
+        RIPE
+        OVERRIPE
+    }
+}
+
+package "Service" {
+    interface IRipenessEvaluator <<interface>> {
+        +evaluate(watermelon: Watermelon): RipenessStatus
+    }
+    class RipenessEvaluator <<service>> {
+        +evaluate(watermelon: Watermelon): RipenessStatus
+    }
+}
+
+package "External Library" {
+    class pydantic.BaseModel <<external>> {
+    }
+}
+
+' Inheritance
+Watermelon --|> pydantic.BaseModel
+
+' Implementation
+RipenessEvaluator ..|> IRipenessEvaluator
+
+' Dependencies
+IRipenessEvaluator ..> Watermelon : uses
+IRipenessEvaluator ..> RipenessStatus : uses
+RipenessEvaluator ..> Watermelon : uses
+RipenessEvaluator ..> RipenessStatus : uses
+
+@enduml
