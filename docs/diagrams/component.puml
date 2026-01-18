@@ -1,0 +1,21 @@
+@startuml
+title PlantUML Component Diagram for Diagram Generator
+
+package "Business Layer" {
+    component PlantUMLDiagramGenerator <<service>> #lightblue
+    class ComponentModel #lightgreen
+    class InterfaceModel #lightgreen
+    class RelationModel #lightgreen
+    class MethodModel #lightgreen
+    class ParameterModel #lightgreen
+    interface IPlantUMLGenerator
+}
+
+PlantUMLDiagramGenerator ..|> IPlantUMLGenerator : implements
+PlantUMLDiagramGenerator --> ComponentModel : depends
+PlantUMLDiagramGenerator --> InterfaceModel : depends
+PlantUMLDiagramGenerator --> RelationModel : depends
+InterfaceModel --> MethodModel : depends
+MethodModel --> ParameterModel : depends
+
+@enduml
