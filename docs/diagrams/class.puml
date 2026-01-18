@@ -1,0 +1,15 @@
+@startuml
+title Context Writer Architecture
+
+interface IContextWriter {
+    + write_context() : None
+}
+
+class ProjectContextWriter {
+    - file_path : str
+    + write_context(context) : None
+}
+
+ProjectContextWriter ..|> IContextWriter : implements
+
+@enduml
