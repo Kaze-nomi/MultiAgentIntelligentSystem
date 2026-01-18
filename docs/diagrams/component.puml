@@ -1,0 +1,18 @@
+@startuml
+title Weather System Component Diagram
+
+package "Business Layer" {
+    component WeatherService as WS <<service>> #LightBlue
+    interface IWeatherService as IWS #LightYellow
+    component DocumentationAgent as DA <<service>> #LightGreen
+}
+
+package "Data Layer" {
+    class WeatherData as WD #LightGray
+}
+
+WS ..|> IWS : implements
+WS ..> WD : depends on
+DA ..> WS : depends on
+
+@enduml
