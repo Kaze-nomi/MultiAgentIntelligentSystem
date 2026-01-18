@@ -35,13 +35,13 @@
         },
         "options": {}
       },
-      "id": "59bb4484-fb83-4eb1-861e-ec4b5cb37678",
+      "id": "512f8624-8d4f-4bcb-912b-99cbaa252c09",
       "name": "📝 Task Input",
       "type": "n8n-nodes-base.formTrigger",
       "typeVersion": 2.1,
       "position": [
-        -4720,
-        128
+        -4672,
+        336
       ],
       "webhookId": "dev-task"
     },
@@ -49,13 +49,13 @@
       "parameters": {
         "jsCode": "const form = $input.first().json;\n\nreturn [{\n  json: {\n    task_description: form['Описание задачи'],\n    repo_owner: form['Владелец репозитория'],\n    repo_name: form['Название репозитория'],\n    base_branch: form['Основная ветка'] || 'main'\n  }\n}];"
       },
-      "id": "39c9e0e9-f342-44f1-b852-00178e87b7f7",
+      "id": "37bea9cb-1823-4624-a5aa-c60e4f806d83",
       "name": "📋 Prepare Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -4496,
-        256
+        -4448,
+        336
       ]
     },
     {
@@ -67,18 +67,18 @@
           "timeout": 30000
         }
       },
-      "id": "bdbb0072-fadb-4a54-89c7-934006239e61",
+      "id": "b94a7767-7be6-408f-a252-fb3f36ef3c6b",
       "name": "📂 Get Repo Structure",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -4288,
-        256
+        -4240,
+        336
       ],
       "retryOnFail": true,
       "credentials": {
         "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
+          "id": "fzqEA54Suh52DdCO",
           "name": "GitHub account"
         }
       },
@@ -88,26 +88,26 @@
       "parameters": {
         "jsCode": "const formData = $('📋 Prepare Data').first().json;\nconst treeResponse = $input.first().json;\n\n// Логируем входные данные для отладки\nconsole.log('Tree response keys:', Object.keys(treeResponse));\nconsole.log('Tree array length:', (treeResponse.tree || []).length);\nconsole.log('First 3 items:', JSON.stringify((treeResponse.tree || []).slice(0, 3), null, 2));\n\n// Парсим структуру репозитория\nconst structure = (treeResponse.tree || []).map(item => ({\n  path: item.path,\n  type: item.type === 'blob' ? 'file' : 'dir',\n  originalType: item.type,\n  size: item.size || 0,\n  sha: item.sha\n}));\n\n// РАСШИРЕННЫЕ паттерны для ключевых файлов\nconst keyPatterns = [\n  /^readme\\.md$/i,\n  /^changelog\\.md$/i,\n  /^contributing\\.md$/i,\n  /^package\\.json$/,\n  /^package-lock\\.json$/,\n  /^requirements\\.txt$/,\n  /^pyproject\\.toml$/,\n  /^setup\\.py$/,\n  /^setup\\.cfg$/,\n  /^poetry\\.lock$/,\n  /^Pipfile$/,\n  /^docker-compose\\.ya?ml$/,\n  /^Dockerfile$/i,\n  /^dockerfile$/i,\n  /^\\.env\\.example$/,\n  /^\\.env\\.sample$/,\n  /^tsconfig\\.json$/,\n  /^vite\\.config\\.(js|ts)$/,\n  /^webpack\\.config\\.js$/,\n  /^next\\.config\\.(js|mjs)$/,\n  /^nuxt\\.config\\.(js|ts)$/,\n  /^\\.eslintrc(\\.(js|json|yml))?$/,\n  /^\\.prettierrc(\\.(js|json|yml))?$/,\n  /^tailwind\\.config\\.(js|ts)$/,\n  /^cargo\\.toml$/i,\n  /^go\\.mod$/,\n  /^go\\.sum$/,\n  /^makefile$/i,\n  /^justfile$/i,\n  /^main\\.(py|js|ts|go|rs)$/,\n  /^index\\.(py|js|ts|tsx|jsx)$/,\n  /^app\\.(py|js|ts|tsx|jsx)$/,\n  /^server\\.(py|js|ts)$/,\n  /^run\\.(py|js|ts)$/,\n  /^cli\\.(py|js|ts)$/,\n  /\\.py$/,\n  /^src\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^lib\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^app\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^pages\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^components\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^hooks\\/.*\\.(js|jsx|ts|tsx)$/,\n  /^utils\\/.*\\.(js|ts)$/,\n  /^helpers\\/.*\\.(js|ts)$/,\n  /^services\\/.*\\.(js|ts)$/,\n  /^api\\/.*\\.(js|ts)$/,\n  /^routes?\\/.*\\.(js|ts)$/,\n  /^controllers?\\/.*\\.(js|ts)$/,\n  /^middleware\\/.*\\.(js|ts)$/,\n  /^models?\\/.*\\.(js|ts)$/,\n  /^schemas?\\/.*\\.(js|ts)$/,\n  /^types?\\/.*\\.(ts|d\\.ts)$/,\n  /^store\\/.*\\.(js|ts)$/,\n  /^config\\/.*\\.(js|ts|json)$/,\n  /\\.go$/,\n  /\\.rs$/,\n  /\\.cpp$/,\n  /\\.cxx$/,\n  /\\.c$/,\n  /\\.java$/,\n  /build\\.gradle\\.kts$/,\n  /pom\\.xml$/,\n  /config\\/.*\\.(json|ya?ml|toml)$/,\n  /\\.github\\/workflows\\/.*\\.ya?ml$/\n];\n\n// Паттерны для ИСКЛЮЧЕНИЯ\nconst excludePatterns = [\n  /node_modules\\//,\n  /\\.git\\//,\n  /dist\\//,\n  /build\\//,\n  /\\.next\\//,\n  /\\.nuxt\\//,\n  /out\\//,\n  /__pycache__\\//,\n  /\\.pytest_cache\\//,\n  /\\.mypy_cache\\//,\n  /\\.ruff_cache\\//,\n  /\\.venv\\//,\n  /venv\\//,\n  /\\.env\\//,\n  /env\\//,\n  /virtualenv\\//,\n  /\\.tox\\//,\n  /\\.eggs\\//,\n  /\\.egg-info\\//,\n  /htmlcov\\//,\n  /coverage\\//,\n  /\\.coverage/,\n  /\\.cache\\//,\n  /\\.temp\\//,\n  /\\.tmp\\//,\n  /target\\//,\n  /vendor\\//,\n  /\\.idea\\//,\n  /\\.vscode\\//,\n  /\\.DS_Store/,\n  /Thumbs\\.db/,\n  /\\.log$/,\n  /\\.min\\.(js|css)$/,\n  /\\.map$/,\n  /\\.bundle\\.(js|css)$/,\n  /test_.*\\.py$/,\n  /.*_test\\.py$/,\n  /.*\\.test\\.(js|ts|jsx|tsx)$/,\n  /.*\\.spec\\.(js|ts|jsx|tsx)$/,\n  /__tests__\\//,\n  /tests?\\//\n];\n\n// Приоритетные файлы\nconst priorityPatterns = [\n  /^readme\\.md$/i,\n  /^package\\.json$/,\n  /^requirements\\.txt$/,\n  /^pyproject\\.toml$/,\n  /^main\\.(py|js|ts)$/,\n  /^index\\.(py|js|ts)$/,\n  /^app\\.(py|js|ts)$/,\n  /^server\\.(py|js|ts)$/,\n  /models?\\.py$/,\n  /schema\\.py$/\n];\n\nconst allFiles = structure.filter(item => {\n  if (item.type !== 'file') return false;\n  if (item.size > 100000) return false;\n  const isExcluded = excludePatterns.some(p => p.test(item.path));\n  if (isExcluded) return false;\n  const matchesKey = keyPatterns.some(p => p.test(item.path));\n  return matchesKey;\n});\n\nconst sortedFiles = allFiles.sort((a, b) => {\n  const aPriority = priorityPatterns.some(p => p.test(a.path)) ? 0 : 1;\n  const bPriority = priorityPatterns.some(p => p.test(b.path)) ? 0 : 1;\n  if (aPriority !== bPriority) return aPriority - bPriority;\n  return a.size - b.size;\n});\n\nconst filesToFetch = sortedFiles.slice(0, 50);\n\n// Сохраняем SHA для ВСЕХ файлов\nconst existingFileShas = {};\nstructure.forEach(item => {\n  if (item.type === 'file') {\n    existingFileShas[item.path] = item.sha;\n  }\n});\n\nconsole.log('=== FINAL STATS ===');\nconsole.log(`Total items in structure: ${structure.length}`);\nconsole.log(`Total files: ${structure.filter(i => i.type === 'file').length}`);\nconsole.log(`Files matching patterns: ${allFiles.length}`);\nconsole.log(`Files to fetch: ${filesToFetch.length}`);\n\nreturn [{\n  json: {\n    ...formData,\n    structure: structure,\n    files_to_fetch: filesToFetch,\n    existing_file_shas: existingFileShas,\n    stats: {\n      total_files: structure.filter(i => i.type === 'file').length,\n      matching_files: allFiles.length,\n      files_to_fetch: filesToFetch.length\n    }\n  }\n}];"
       },
-      "id": "ff5eaf31-b7bc-4822-8419-5fd077e75c42",
+      "id": "eb26b50c-1a2a-4bba-a746-5c43a32a6159",
       "name": "🔍 Analyze Structure",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -4064,
-        128
+        -4016,
+        336
       ]
     },
     {
       "parameters": {
         "jsCode": "const data = $input.first().json;\nconst filesToFetch = data.files_to_fetch || [];\n\nif (filesToFetch.length === 0) {\n  return [{ json: { ...data, skip_fetch: true } }];\n}\n\nreturn filesToFetch.map(file => ({\n  json: { ...data, file_path: file.path, file_sha: file.sha }\n}));"
       },
-      "id": "8c815f38-6357-4565-a54d-04152e48a1dd",
+      "id": "482eb6d2-3aa8-46f8-a24d-9f0e0d9496d8",
       "name": "📄 Split Files",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -3840,
-        128
+        -3792,
+        336
       ]
     },
     {
@@ -124,18 +124,18 @@
           "timeout": 20000
         }
       },
-      "id": "13ad326e-4ffc-4416-b3ff-7fd2c277b527",
+      "id": "a9fef38c-000a-403c-9440-1dce7481ab0c",
       "name": "📥 Fetch Contents",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -3616,
-        128
+        -3568,
+        336
       ],
       "retryOnFail": true,
       "credentials": {
         "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
+          "id": "fzqEA54Suh52DdCO",
           "name": "GitHub account"
         }
       }
@@ -144,13 +144,13 @@
       "parameters": {
         "jsCode": "const items = $input.all();\nconst firstItem = $('🔍 Analyze Structure').first().json;\n\nconst keyFiles = {};\nlet loaded = 0, failed = 0;\n\nitems.forEach(item => {\n  if (item.json.skip_fetch) return;\n  try {\n    const content = item.json.content;\n    const path = item.json.path || item.json.name;\n    if (content && path) {\n      keyFiles[path] = Buffer.from(content, 'base64').toString('utf-8');\n      loaded++;\n    }\n  } catch (e) { failed++; }\n});\n\nreturn [{\n  json: {\n    task_description: firstItem.task_description,\n    repo_owner: firstItem.repo_owner,\n    repo_name: firstItem.repo_name,\n    base_branch: firstItem.base_branch,\n    existing_file_shas: firstItem.existing_file_shas,\n    repo_context: { structure: firstItem.structure, key_files: keyFiles },\n    files_loaded: loaded\n  }\n}];"
       },
-      "id": "007f2538-bc30-490d-85f4-fcea38bf93f2",
+      "id": "4d6fe446-13bf-41c0-92c1-e3f5a91a52d2",
       "name": "📦 Aggregate Contents",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -3408,
-        128
+        -3360,
+        336
       ]
     },
     {
@@ -164,26 +164,26 @@
           "timeout": 10000000
         }
       },
-      "id": "0c996e90-6a06-4a84-84a1-1a523e750617",
+      "id": "6b586b8c-87c8-493f-9229-0025844a42b1",
       "name": "🤖 Call Project Manager",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -3184,
-        128
+        -3136,
+        336
       ]
     },
     {
       "parameters": {
         "jsCode": "const aggregateData = $('📦 Aggregate Contents').first().json;\nconst pmResponse = $input.first().json;\n\nif (pmResponse.status === 'failed') {\n  const errors = pmResponse.errors || [];\n  const agentResults = pmResponse.agent_results || {};\n  \n  let errorDetails = 'Pipeline failed:\\n';\n  \n  if (agentResults.code_writer) {\n    const cw = agentResults.code_writer;\n    if (!cw.files || cw.files.length === 0) {\n      errorDetails += '❌ Code Writer: No files generated\\n';\n      if (cw.implementation_notes) {\n        errorDetails += `   Notes: ${cw.implementation_notes.join(', ')}\\n`;\n      }\n    }\n  }\n  \n  errors.forEach(e => {\n    errorDetails += `❌ ${e.step}: ${e.error}\\n`;\n  });\n}\n\nconst files = pmResponse.files_to_create || [];\nif (files.length === 0) {\n  $input.first().json.status = 'failed';\n}\n\nreturn [{\n  json: {\n    ...pmResponse,\n    repo_owner: aggregateData.repo_owner,\n    repo_name: aggregateData.repo_name,\n    base_branch: aggregateData.base_branch,\n    existing_file_shas: aggregateData.existing_file_shas\n  }\n}];"
       },
-      "id": "92c5af96-3b3a-42cf-ae74-735d35095ce1",
+      "id": "e6374f3e-fa30-4adc-a400-ba4889c17af7",
       "name": "✅ Check PM Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -2960,
-        128
+        -2912,
+        336
       ]
     },
     {
@@ -222,13 +222,13 @@
           "looseTypeValidation": true
         }
       },
-      "id": "81efa7a0-c3fc-43c1-88e9-be4e737948bd",
+      "id": "3b78b34a-b6ff-4c3e-bfb9-a01a6d81a142",
       "name": "🔀 Is Success?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -2768,
-        128
+        -2720,
+        336
       ]
     },
     {
@@ -238,18 +238,18 @@
         "nodeCredentialType": "githubApi",
         "options": {}
       },
-      "id": "9d788440-7434-4d10-ac02-48bddcee20be",
+      "id": "d694c8f0-b9cc-48df-a0c0-4f1c992ce395",
       "name": "🔗 Get Base SHA",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2496,
-        0
+        -2448,
+        208
       ],
       "retryOnFail": true,
       "credentials": {
         "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
+          "id": "fzqEA54Suh52DdCO",
           "name": "GitHub account"
         }
       }
@@ -258,13 +258,13 @@
       "parameters": {
         "jsCode": "const pmData = $('✅ Check PM Response').first().json;\nconst shaResponse = $input.first().json;\n\nreturn [{ json: { ...pmData, base_sha: shaResponse.object.sha } }];"
       },
-      "id": "1ada7048-fffd-4081-8466-62eedb6e97c8",
+      "id": "d6c5f31d-cbff-44d9-ba41-8ace4e4cf80c",
       "name": "Extract SHA",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -2288,
-        0
+        -2240,
+        208
       ]
     },
     {
@@ -278,18 +278,18 @@
         "jsonBody": "={{ JSON.stringify({ ref: 'refs/heads/' + $json.branch_name, sha: $json.base_sha }) }}",
         "options": {}
       },
-      "id": "9276df3c-fc70-458c-a339-2e0c3ebaf2a4",
+      "id": "f9630282-ba05-4666-a502-e6e58eb9ef4b",
       "name": "🌿 Create Branch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2064,
-        0
+        -2016,
+        208
       ],
       "retryOnFail": true,
       "credentials": {
         "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
+          "id": "fzqEA54Suh52DdCO",
           "name": "GitHub account"
         }
       }
@@ -298,26 +298,26 @@
       "parameters": {
         "jsCode": "// =====================================================\n// 🔧 ИНИЦИАЛИЗАЦИЯ RETRY LOOP\n// =====================================================\nconst data = $('Extract SHA').first().json;\nconst files = data.files_to_create || [];\nconst existingShas = data.existing_file_shas || {};\n\nif (files.length === 0) {\n  throw new Error('No files to create!');\n}\n\n// Инициализируем структуру для retry\nconst filesToProcess = files.map((file, index) => {\n  const existingSha = existingShas[file.path];\n  return {\n    path: file.path,\n    content: file.content || '',\n    action: file.action || 'create',\n    source_agent: file.source_agent || 'unknown',\n    existing_sha: existingSha || null,\n    status: 'pending',  // pending, success, failed\n    attempts: 0,\n    last_error: null\n  };\n});\n\nreturn [{\n  json: {\n    repo_owner: data.repo_owner,\n    repo_name: data.repo_name,\n    branch_name: data.branch_name,\n    base_branch: data.base_branch,\n    commit_message: data.commit_message,\n    pr_title: data.pr_title,\n    pr_description: data.pr_description,\n    summary: data.summary,\n    task_id: data.task_id,\n    tech_stack: data.tech_stack,\n    review_iterations: data.review_iterations,\n    agent_results: data.agent_results,\n    // Retry state\n    files_to_process: filesToProcess,\n    created_files: [],  // Успешно созданные\n    failed_files: [],   // Окончательно failed\n    current_attempt: 1,\n    max_attempts: 3\n  }\n}];"
       },
-      "id": "ba761a85-7edf-48c0-bece-28f9316f4a53",
+      "id": "c28b0c66-22e3-43d4-ba43-8138786448b9",
       "name": "🔄 Init Retry Loop",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1840,
-        0
+        -1792,
+        208
       ]
     },
     {
       "parameters": {
         "jsCode": "// =====================================================\n// 📄 SPLIT: Получаем pending файлы для обработки\n// =====================================================\nconst data = $input.first().json;\nconst pendingFiles = data.files_to_process.filter(f => f.status === 'pending');\n\nconsole.log(`Attempt ${data.current_attempt}/${data.max_attempts}: ${pendingFiles.length} files to process`);\n\nif (pendingFiles.length === 0) {\n  // Все файлы обработаны - идём дальше\n  return [{ json: { ...data, all_processed: true } }];\n}\n\n// Разбиваем на отдельные items для параллельной обработки\nreturn pendingFiles.map(file => ({\n  json: {\n    ...data,\n    current_file: file,\n    all_processed: false\n  }\n}));"
       },
-      "id": "48a31a18-a582-40d1-917a-5c74dcb0118a",
+      "id": "4c54482e-4b76-476e-997f-92260e3d4be4",
       "name": "📄 Split Pending Files",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1616,
-        0
+        -1568,
+        208
       ]
     },
     {
@@ -344,13 +344,13 @@
         },
         "options": {}
       },
-      "id": "77bd6619-f1f2-4692-ae9f-a1669c807440",
+      "id": "85c61a25-2a1b-48d0-bbdc-1b31089beaef",
       "name": "🔀 All Processed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -1424,
-        0
+        -1376,
+        208
       ]
     },
     {
@@ -362,19 +362,19 @@
           "timeout": 15000
         }
       },
-      "id": "16bbfb1c-92e7-4752-b8b9-f81fe9708359",
+      "id": "b45c1216-415d-40f7-9523-38c42633cf69",
       "name": "🔍 Get File SHA",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -1152,
-        112
+        -1104,
+        320
       ],
       "alwaysOutputData": false,
       "retryOnFail": false,
       "credentials": {
         "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
+          "id": "fzqEA54Suh52DdCO",
           "name": "GitHub account"
         }
       },
@@ -385,13 +385,13 @@
         "mode": "runOnceForEachItem",
         "jsCode": "// =====================================================\n// 📝 PREPARE: Подготавливаем данные для PUT\n// Обрабатываем КАЖДЫЙ item отдельно!\n// =====================================================\n\nconst item = $('📄 Split Pending Files').item;\nlet file = $json;\nconst data = item.json;\n  \n// Определяем SHA файла\nlet fileSha = null;\n// Проверяем, вернул ли GitHub SHA (файл уже существует на ветке)\nif (file.sha) {\n  fileSha = file.sha;\n  console.log(`File exists on branch: ${file.path}, SHA: ${fileSha}`);\n}\n// Новый файл\nelse {\n  console.log(`New file: ${file.path}`);\n}\n\n// Кодируем контент в base64\nconst contentBase64 = Buffer.from(data.current_file.content || '').toString('base64');\n\n// Возвращаем item с подготовленными данными\nlet result = ({\n  json: {\n    // Пробрасываем все контекстные данные\n    repo_owner: data.repo_owner,\n    repo_name: data.repo_name,\n    branch_name: data.branch_name,\n    base_branch: data.base_branch,\n    commit_message: data.commit_message,\n    pr_title: data.pr_title,\n    pr_description: data.pr_description,\n    summary: data.summary,\n    task_id: data.task_id,\n    tech_stack: data.tech_stack,\n    review_iterations: data.review_iterations,\n    agent_results: data.agent_results,\n    files_to_process: data.files_to_process,\n    created_files: data.created_files,\n    failed_files: data.failed_files,\n    current_attempt: data.current_attempt,\n    max_attempts: data.max_attempts,\n    \n    // Текущий файл с resolved SHA\n    current_file: {\n      ...file,\n      resolved_sha: fileSha\n    },\n    \n    // Данные для PUT запроса\n    file_path: data.current_file.path,\n    file_content_base64: contentBase64,\n    file_sha: fileSha\n}});\n\nreturn result;"
       },
-      "id": "7a60b43a-03ee-41f5-9dde-96c391c778e5",
+      "id": "5c37acc2-f02b-4e38-8edf-f4cfd35445bb",
       "name": "📝 Prepare PUT Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -928,
-        112
+        -880,
+        320
       ]
     },
     {
@@ -413,17 +413,17 @@
           "timeout": 30000
         }
       },
-      "id": "f1b54890-f421-4e20-8f30-dda386aa88ff",
+      "id": "26c99945-ad74-4bde-84ca-1a69f990be28",
       "name": "💾 Create/Update File",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -704,
-        112
+        -656,
+        320
       ],
       "credentials": {
         "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
+          "id": "fzqEA54Suh52DdCO",
           "name": "GitHub account"
         }
       },
@@ -433,13 +433,13 @@
       "parameters": {
         "jsCode": "// =====================================================\n// 📊 PROCESS RESULT: Обрабатываем результат PUT\n// =====================================================\nconst items = $input.all();\nconst firstData = $('📄 Split Pending Files').first().json;\n\n// Собираем результаты\nconst results = items.map(item => {\n  const data = item.json;\n  const path = data?.content?.path || null;\n  \n  \n  // Проверяем успех\n  if (data.content && data.commit) {\n    return { path, status: 'success', sha: data.content.sha };\n  } else {\n    const error = data.message || data.error || 'Unknown error';\n    return { path, status: 'failed', error };\n  }\n});\n\nconsole.log(results);\n\n// Обновляем состояние файлов\nconst updatedFiles = firstData.files_to_process.map(f => {\n  if (f.status != 'success') {\n    const result = results.find(r => r.path === f.path);\n    if (result) {\n      if (result.status === 'success') {\n        return { ...f, status: 'success', new_sha: result.sha };\n      }\n    } else {\n      return {\n        ...f,\n        attempts: f.attempts + 1,\n        status: f.attempts + 1 >= firstData.max_attempts ? 'failed' : 'pending'    \n      }\n    }\n  } else {\n    return {\n      ...f\n    }\n  }\n});\n\n// Подсчитываем статистику\nconst successCount = updatedFiles.filter(f => f.status === 'success').length;\nconst pendingCount = updatedFiles.filter(f => f.status === 'pending').length;\nconst failedCount = updatedFiles.filter(f => f.status === 'failed').length;\n\nconsole.log(`After attempt ${firstData.current_attempt}: success=${successCount}, pending=${pendingCount}, failed=${failedCount}`);\n\n// Если есть pending файлы и не превысили лимит попыток - продолжаем\nconst needRetry = pendingCount > 0 && firstData.current_attempt < firstData.max_attempts;\n\nreturn [{\n  json: {\n    repo_owner: firstData.repo_owner,\n    repo_name: firstData.repo_name,\n    branch_name: firstData.branch_name,\n    base_branch: firstData.base_branch,\n    commit_message: firstData.commit_message,\n    pr_title: firstData.pr_title,\n    pr_description: firstData.pr_description,\n    summary: firstData.summary,\n    task_id: firstData.task_id,\n    tech_stack: firstData.tech_stack,\n    review_iterations: firstData.review_iterations,\n    agent_results: firstData.agent_results,\n    files_to_process: updatedFiles,\n    current_attempt: firstData.current_attempt + 1,\n    max_attempts: firstData.max_attempts,\n    // Статистика\n    success_count: successCount,\n    pending_count: pendingCount,\n    failed_count: failedCount,\n    need_retry: needRetry,\n    all_done: !needRetry\n  }\n}];"
       },
-      "id": "150ec1bd-bd3e-490a-ba92-c45be96dde87",
+      "id": "7d5480b7-b508-44b0-ab80-48b1cd1fd181",
       "name": "📊 Process Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -480,
-        112
+        -432,
+        320
       ]
     },
     {
@@ -466,39 +466,39 @@
         },
         "options": {}
       },
-      "id": "adc8bf31-0d78-41b8-8b7c-5c41e69cf0d7",
+      "id": "3735854c-b610-4abb-bf70-cca5ba433df1",
       "name": "🔀 Need Retry?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -256,
-        112
+        -208,
+        320
       ]
     },
     {
       "parameters": {
         "jsCode": "// =====================================================\n// ⏳ WAIT: Небольшая задержка перед retry\n// =====================================================\nconst data = $input.first().json;\n\nconsole.log(`Waiting before retry attempt ${data.current_attempt}...`);\n\n// Просто пробрасываем данные дальше\nreturn [{ json: data }];"
       },
-      "id": "76d27eed-9833-4173-81a3-a5fa9c443181",
+      "id": "2ad6f755-67ab-4600-8f3d-4f73393e871b",
       "name": "⏳ Wait & Retry",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -48,
-        -208
+        0,
+        0
       ]
     },
     {
       "parameters": {
         "jsCode": "// =====================================================\n// ✅ FINALIZE: Финальная проверка результатов\n// =====================================================\nconst data = $input.first().json;\nconst files = data.files_to_process || [];\n\nconst successFiles = files.filter(f => f.status === 'success');\nconst failedFiles = files.filter(f => f.status === 'failed');\n\nconsole.log(`Final: ${successFiles.length} success, ${failedFiles.length} failed`);\n\n// Если есть failed файлы - это ошибка\nconst hasErrors = failedFiles.length > 0;\n\nreturn [{\n  json: {\n    ...data,\n    files_created: successFiles.length,\n    files_failed: failedFiles.length,\n    success_files: successFiles.map(f => f.path),\n    failed_files_details: failedFiles.map(f => ({\n      path: f.path,\n      error: f.last_error,\n      attempts: f.attempts\n    })),\n    has_errors: hasErrors,\n    can_create_pr: successFiles.length > 0  // PR можно создать если хоть что-то создалось\n  }\n}];"
       },
-      "id": "6691c9b4-ec7d-4472-a607-a8a83da14459",
+      "id": "1a0eb790-dd42-4342-85db-538c80126ac7",
       "name": "✅ Finalize Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -48,
-        0
+        0,
+        208
       ]
     },
     {
@@ -525,13 +525,13 @@
         },
         "options": {}
       },
-      "id": "d0cfec94-3b44-4bab-a7a6-c7c48ec4ac4d",
+      "id": "c0e39388-0c54-4c84-9326-e927616e4037",
       "name": "🔀 Can Create PR?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        176,
-        0
+        224,
+        208
       ]
     },
     {
@@ -545,18 +545,18 @@
         "jsonBody": "={{ JSON.stringify({ title: $json.pr_title, head: $json.branch_name, base: $json.base_branch, body: $json.pr_description }) }}",
         "options": {}
       },
-      "id": "89d25cac-f6d9-4bbd-9f17-67f145dc6c08",
+      "id": "a67aa300-d6ae-4c4d-ba85-67cbf4f62fca",
       "name": "🔀 Create PR",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        400,
-        -128
+        448,
+        80
       ],
       "retryOnFail": true,
       "credentials": {
         "githubApi": {
-          "id": "EuDjNHcUwsanYUOc",
+          "id": "fzqEA54Suh52DdCO",
           "name": "GitHub account"
         }
       }
@@ -565,26 +565,26 @@
       "parameters": {
         "jsCode": "const data = $('✅ Finalize Results').first().json;\nconst pr = $input.first().json;\n\nlet msg = `${data.summary}\\n\\n`;\n\nmsg += `\\n🔗 [Pull Request #${pr.number}](${pr.html_url})`;\n\nreturn [{ json: { message: msg } }];"
       },
-      "id": "bb4aaaaa-e415-48d2-8182-c38eb34ed8f3",
+      "id": "8eecc241-723d-41c3-b753-0bae77e776ba",
       "name": "📱 Success Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        624,
-        -128
+        672,
+        80
       ]
     },
     {
       "parameters": {
         "jsCode": "const data = $input.first().json;\n\nlet msg = `❌ *Ошибка создания файлов*\\n\\n`;\nmsg += `Не удалось создать ни одного файла после ${data.max_attempts} попыток.\\n\\n`;\n\nmsg += `📁 *Проблемные файлы:*\\n`;\ndata.failed_files_details.forEach(f => {\n  msg += `• \\`${f.path}\\`\\n`;\n  msg += `  Ошибка: ${f.error}\\n`;\n  msg += `  Попыток: ${f.attempts}\\n\\n`;\n});\n\nmsg += `\\n💡 *Возможные причины:*\\n`;\nmsg += `• Файл заблокирован\\n`;\nmsg += `• Проблемы с правами доступа\\n`;\nmsg += `• Rate limit GitHub API\\n`;\n\nreturn [{ json: { message: msg } }];"
       },
-      "id": "2379f190-099e-469b-b4fd-c049a143017d",
+      "id": "2fb61ae9-2af0-463f-ba65-16d4e8dcf3e8",
       "name": "📱 Total Failure Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        400,
-        128
+        448,
+        336
       ]
     },
     {
@@ -594,21 +594,21 @@
         "additionalFields": {
           "appendAttribution": false,
           "disable_web_page_preview": true,
-          "parse_mode": "Markdown"
+          "parse_mode": "HTML"
         }
       },
-      "id": "472299ef-f78c-43a2-8b56-e243caa2fb6b",
+      "id": "0ea793bd-a147-470d-9284-606362059704",
       "name": "📤 Send Success",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        848,
-        -128
+        896,
+        80
       ],
       "webhookId": "482d72a6-9720-44e2-a67f-b1bbd47b3c28",
       "credentials": {
         "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
+          "id": "t3Br8mTgYQNdspYs",
           "name": "Telegram account"
         }
       }
@@ -619,21 +619,21 @@
         "text": "={{ $json.message }}",
         "additionalFields": {
           "appendAttribution": false,
-          "parse_mode": "Markdown"
+          "parse_mode": "HTML"
         }
       },
-      "id": "c492e3b3-76ad-46fc-81d1-4e3df51c21ce",
+      "id": "15574f02-4db0-42d0-8c64-626bd57f0da5",
       "name": "📤 Send Failure",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        624,
-        128
+        672,
+        336
       ],
       "webhookId": "4568e073-12f9-47c2-87c3-1391871d6192",
       "credentials": {
         "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
+          "id": "t3Br8mTgYQNdspYs",
           "name": "Telegram account"
         }
       }
@@ -642,13 +642,13 @@
       "parameters": {
         "jsCode": "const data = $('✅ Check PM Response').first().json;\n\nlet msg = `❌ *Pipeline Failed*\\n\\n`;\nmsg += `${data.summary || 'No summary available'}\\n\\n`;\n\nif (data.errors) {\n  msg += `*Ошибки:*\\n`;\n  data.errors.forEach(e => {\n    msg += `• ${e.step}: ${e.error}\\n`;\n  });\n}\n\nreturn [{ json: { message: msg } }];"
       },
-      "id": "3a8dc332-cf88-4f5e-81f0-2ba6822ed9ca",
+      "id": "fb8b43bc-c70b-4985-b478-7fdb1a8d782f",
       "name": "📱 PM Error Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -2496,
-        256
+        -2448,
+        464
       ]
     },
     {
@@ -657,166 +657,92 @@
         "text": "={{ $json.message }}",
         "additionalFields": {
           "appendAttribution": false,
-          "parse_mode": "Markdown"
+          "parse_mode": "HTML"
         }
       },
-      "id": "b26c799f-e553-4fd0-b840-084d661358f6",
+      "id": "21b28d35-b164-47e8-b93e-16259a32dcbf",
       "name": "📤 Send PM Error",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -2288,
-        256
+        -2240,
+        464
       ],
       "webhookId": "78218e0c-a817-4c73-8001-40d02bbf6cf0",
       "credentials": {
         "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
+          "id": "t3Br8mTgYQNdspYs",
           "name": "Telegram account"
         }
       }
     },
     {
       "parameters": {},
-      "id": "8b94ded7-ecae-4a6d-b270-d57321adbe88",
+      "id": "a471bbe0-e7ce-4a62-958c-c192fc9ecb06",
       "name": "✅ End Success",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1072,
-        -128
+        1120,
+        80
       ]
     },
     {
       "parameters": {},
-      "id": "594fd35b-89b8-453f-84c2-74f36e48e084",
+      "id": "5e9d4e70-f4fd-4bf5-ba76-3da34c2e95f7",
       "name": "❌ End Failure",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        848,
-        128
+        896,
+        336
       ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const message = $input.first().json.message || $input.first().json.edited_message;\n\n// Проверяем, что есть сообщение\nif (!message || !message.text) {\n  throw new Error(\"Сообщение не содержит текста!\");\n}\n\nconst text = message.text.trim();\nconst chatId = message.chat.id;\n\n// Проверяем, что сообщение начинается с /task\nif (!text.startsWith('/task')) {\n  throw new Error(`Команда должна начинаться с /task\\nПримеры:\\n/task исправить баг\\n/task myrepo: добавить новую функцию`);\n}\n\n// Убираем команду /task и возможное имя бота (/task@botname)\nlet commandText = text.replace(/^\\/task(@\\w+)?\\s*/i, '');\n\n// Если после команды ничего нет\nif (!commandText.trim()) {\n  throw new Error(\"Пожалуйста, укажите задачу после команды /task\\nПример: /task исправить баг в логике\");\n}\n\nlet repo_name, task_description;\n\n// Парсим: проверяем формат \"репозиторий: описание задачи\"\nif (commandText.includes(':')) {\n  // Находим первое двоеточие\n  const colonIndex = commandText.indexOf(':');\n  \n  // Часть до двоеточия - название репозитория\n  repo_name = commandText.substring(0, colonIndex).trim();\n  \n  // Часть после двоеточия - описание задачи\n  task_description = commandText.substring(colonIndex + 1).trim();\n  \n  // Проверяем, что репозиторий не пустой\n  if (!repo_name) {\n    repo_name = 'MultiAgentIntelligentSystem';\n  }\n} else {\n  // Если двоеточия нет - используем дефолтный репозиторий\n  repo_name = 'MultiAgentIntelligentSystem';\n  task_description = commandText.trim();\n}\n\n// Проверяем, что описание задачи не пустое\nif (!task_description) {\n  throw new Error(\"Описание задачи не может быть пустым!\\nПример: /task исправить баг в обработке ошибок\");\n}\n\n// Очищаем название репозитория от лишних символов, но сохраняем пробелы в описании\nrepo_name = repo_name.replace(/[^\\w\\-\\.]/g, '');\n\nreturn [{\n  json: {\n    task_description: task_description,\n    repo_owner: 'kaze-nomi',\n    repo_name: repo_name,\n    base_branch: 'main',\n  }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -4720,
-        384
-      ],
-      "id": "98f96c43-7835-400b-9410-500f17e73234",
-      "name": "📱 Parse Telegram Message",
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "chatId": "6487984216",
-        "text": "=Ошибка:\n\n{{ $json }}",
-        "replyMarkup": "inlineKeyboard",
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        -4496,
-        512
-      ],
-      "id": "69f5fba3-334d-4c14-a506-bdbecc474500",
-      "name": "📤 Send Parsing Error",
-      "webhookId": "69b3135d-f2a2-4377-89bc-f94e6ecc34a6",
-      "credentials": {
-        "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
-          "name": "Telegram account"
-        }
-      }
     },
     {
       "parameters": {
         "chatId": "6487984216",
         "text": "={{ $input.first().json }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -4064,
-        384
+        -4016,
+        528
       ],
-      "id": "5ba86223-8342-4019-a622-350284ef72d5",
+      "id": "0c9f882d-d52c-40e1-8c63-b760322c7780",
       "name": "📤 Send GitHub error",
       "webhookId": "69b3135d-f2a2-4377-89bc-f94e6ecc34a6",
       "credentials": {
         "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "updates": [
-          "message"
-        ],
-        "additionalFields": {
-          "chatIds": "6487984216"
-        }
-      },
-      "type": "n8n-nodes-base.telegramTrigger",
-      "typeVersion": 1.2,
-      "position": [
-        -4944,
-        384
-      ],
-      "id": "37b378e6-22ae-4152-b703-47db850873ff",
-      "name": "🚀 Telegram Trigger",
-      "webhookId": "9cb6dd03-4e32-4275-83f9-a96c38719a44",
-      "credentials": {
-        "telegramApi": {
-          "id": "kakDfZD7GZ0uQLva",
+          "id": "t3Br8mTgYQNdspYs",
           "name": "Telegram account"
         }
       }
     },
     {
       "parameters": {},
-      "id": "99d98018-34f9-48d7-988e-6f6b856a2273",
+      "id": "25bd9c9a-8fea-4858-951e-46a36da184bc",
       "name": "❌ End PM Failure",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        -2064,
-        256
+        -2016,
+        464
       ]
     },
     {
       "parameters": {},
-      "id": "54f4ad66-6046-40d5-997a-af53404b20b4",
+      "id": "0e10585c-62a6-40dd-b576-6e4c32f842e5",
       "name": "❌ End GitHub Failure",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        -3840,
-        384
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "ada68389-5fb4-466f-947e-69956b368a14",
-      "name": "❌ Telegram Input Failure",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        -4288,
-        512
+        -3792,
+        528
       ]
     }
   ],
@@ -1198,35 +1124,6 @@
         ]
       ]
     },
-    "📱 Parse Telegram Message": {
-      "main": [
-        [
-          {
-            "node": "📋 Prepare Data",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "📤 Send Parsing Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "🚀 Telegram Trigger": {
-      "main": [
-        [
-          {
-            "node": "📱 Parse Telegram Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "📤 Send GitHub error": {
       "main": [
         [
@@ -1237,28 +1134,17 @@
           }
         ]
       ]
-    },
-    "📤 Send Parsing Error": {
-      "main": [
-        [
-          {
-            "node": "❌ Telegram Input Failure",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "c34af814-6bd6-4955-8905-6a48b34fefc0",
+  "versionId": "f5630d46-87f0-47b2-8100-6e4da6e18a75",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "28f87a46502090a63d81c1b0d194b30cb85aa507eb30004f35c39d5a49ec1f61"
+    "instanceId": "2561db53f22c6db92d031cc7d2ea687e083305b50833ce867e949c351837dfb2"
   },
-  "id": "q5zbLyvM2G174cvL",
+  "id": "THQt64ZcCnQx5qXE",
   "tags": []
 }

@@ -38,9 +38,10 @@ from typing import Dict, List, Optional, Any, Tuple
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 import httpx
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from logging_config import setup_logging
 
@@ -64,6 +65,27 @@ DEFAULT_MODEL = os.getenv("DEFAULT_MODEL")
 logger = setup_logging("architect")
 
 # ============================================================================
+# PROMETHEUS METRICS
+# ============================================================================
+
+# Стандартизированные метрики для всех агентов
+AGENT_REQUESTS_TOTAL = Counter('agent_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
+AGENT_RESPONSE_TIME_SECONDS_BUCKET = Histogram('agent_response_time_seconds_bucket', 'Request duration',
+                            buckets=[0.5, 1, 2, 5, 10, 30, 60, 120, 300], labelnames=['method', 'endpoint'])
+AGENT_ACTIVE_REQUESTS = Gauge('agent_active_requests', 'Number of active requests', ['method', 'endpoint'])
+
+# Общие метрики для всех агентов
+PM_AGENT_STATUS = Gauge('pm_agent_status', 'Agent status', ['agent_name'])
+PM_SYSTEM_ERRORS_TOTAL = Counter('pm_system_errors_total', 'Total system errors', ['agent_name', 'error_type'])
+
+# Стандартизированные метрики для всех агентов
+PM_AGENT_CALLS = Counter('pm_agent_calls_total', 'Agent calls', ['agent_name', 'status'])
+PM_AGENT_RESPONSE_TIME_SECONDS_BUCKET = Histogram('pm_agent_response_time_seconds_bucket', 'Agent response time', ['agent_name'], buckets=[0.5, 1, 2, 5, 10, 30, 60, 120, 300])
+PM_ACTIVE_TASKS = Gauge('pm_active_tasks', 'Currently processing tasks', ['method', 'endpoint'])
+PM_TASKS_TOTAL = Counter('pm_tasks_total', 'Total tasks processed', ['status', 'method', 'endpoint'])
+PM_TASK_DURATION = Histogram('pm_task_duration_seconds_bucket', 'Task duration', buckets=[30, 60, 120, 300, 600, 1200])
+
+# ============================================================================
 # HTTP CLIENT
 # ============================================================================
 
@@ -75,8 +97,16 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager"""
     global http_client
     http_client = httpx.AsyncClient(timeout=httpx.Timeout(LLM_TIMEOUT))
+    
+    # Устанавливаем статус агента при запуске
+    PM_AGENT_STATUS.labels(agent_name="architect").set(1)  # 1 = online
+    
     logger.info("Architect Agent started")
     yield
+    
+    # Устанавливаем статус агента при остановке
+    PM_AGENT_STATUS.labels(agent_name="architect").set(0)  # 0 = offline
+    
     await http_client.aclose()
     logger.info("Architect Agent stopped")
 
@@ -91,6 +121,44 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+
+# ============================================================================
+# PROMETHEUS MIDDLEWARE
+# ============================================================================
+
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    """Middleware для отслеживания HTTP метрик"""
+    # Исключаем эндпоинты /health и /metrics из метрик
+    if request.url.path in ["/health", "/metrics"]:
+        return await call_next(request)
+    
+    agent_name = "architect_agent"
+    AGENT_ACTIVE_REQUESTS.labels(method=request.method, endpoint=request.url.path).inc()
+    PM_ACTIVE_TASKS.labels(method=request.method, endpoint=request.url.path).inc()
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+    except Exception:
+        status = "500"
+        raise
+    else:
+        duration = time.time() - start_time
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method=request.method, endpoint=request.url.path).observe(duration)
+        AGENT_REQUESTS_TOTAL.labels(method=request.method, endpoint=request.url.path, status=status).inc()
+        
+        # Обновляем стандартизированные метрики
+        PM_AGENT_CALLS.labels(agent_name=agent_name, status=status).inc()
+        PM_AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(agent_name=agent_name).observe(duration)
+        PM_TASKS_TOTAL.labels(status=status, method=request.method, endpoint=request.url.path).inc()
+        PM_TASK_DURATION.observe(duration)
+        
+        return response
+    finally:
+        AGENT_ACTIVE_REQUESTS.labels(method=request.method, endpoint=request.url.path).dec()
+        PM_ACTIVE_TASKS.labels(method=request.method, endpoint=request.url.path).dec()
 
 
 # ============================================================================
@@ -135,6 +203,8 @@ async def call_llm(
     start_time = time.time()
 
     try:
+        # Метрики запросов к LLM теперь отслеживаются в OpenRouter MCP
+        
         response = await http_client.post(
             f"{OPENROUTER_MCP_URL}/chat/completions",
             json={
@@ -157,6 +227,8 @@ async def call_llm(
             prompt_tokens = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
             total_tokens = usage.get("total_tokens", 0)
+
+            # Метрики токенов теперь отслеживаются в OpenRouter MCP
 
             # Извлечение reasoning (если присутствует)
             reasoning = None
@@ -181,7 +253,7 @@ async def call_llm(
 
             return content
         else:
-            # Логирование ошибки
+            # Логирование ошибки и обновление метрики
             error_log = {
                 "event": "llm_request_error",
                 "model": DEFAULT_MODEL,
@@ -191,11 +263,16 @@ async def call_llm(
                 "timestamp": datetime.now().isoformat()
             }
             logger.error(json.dumps(error_log, ensure_ascii=False))
+            
+            # Обновляем метрику системных ошибок
+            PM_SYSTEM_ERRORS_TOTAL.labels(agent_name="architect", error_type="llm_error").inc()
+            
             return ""
 
     except Exception as e:
         duration = time.time() - start_time
-        # Логирование исключения
+        
+        # Логирование исключения и обновление метрики
         exception_log = {
             "event": "llm_request_exception",
             "model": DEFAULT_MODEL,
@@ -204,8 +281,11 @@ async def call_llm(
             "timestamp": datetime.now().isoformat()
         }
         logger.error(json.dumps(exception_log, ensure_ascii=False))
+        
+        # Обновляем метрику системных ошибок
+        PM_SYSTEM_ERRORS_TOTAL.labels(agent_name="architect", error_type="exception").inc()
+        
         return ""
-
 
 def parse_json_response(response: str) -> Optional[Dict]:
     """Извлекает JSON из ответа LLM"""
@@ -1216,14 +1296,31 @@ async def analyze_only(request: Dict[str, Any]):
     """
     Только анализ существующей архитектуры
     """
-    
-    tech_stack_data = request.get("tech_stack", {})
-    tech_stack = TechStack(**tech_stack_data) if tech_stack_data else TechStack()
-    repo_context = request.get("repo_context", {})
-    
-    existing_arch = await analyze_existing_architecture(repo_context, tech_stack)
-    
-    return existing_arch.dict()
+
+    AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/analyze").inc()
+    start_time = time.time()
+
+    try:
+        tech_stack_data = request.get("tech_stack", {})
+        tech_stack = TechStack(**tech_stack_data) if tech_stack_data else TechStack()
+        repo_context = request.get("repo_context", {})
+
+        existing_arch = await analyze_existing_architecture(repo_context, tech_stack)
+
+        duration = time.time() - start_time
+
+        # Метрики
+        AGENT_REQUESTS_TOTAL.labels(method="POST", endpoint="/analyze", status="success").inc()
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method="POST", endpoint="/analyze").observe(duration)
+
+        return existing_arch.dict()
+
+    except Exception as e:
+        AGENT_REQUESTS_TOTAL.labels(method="POST", endpoint="/analyze", status="error").inc()
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method="POST", endpoint="/analyze").observe(time.time() - start_time)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/analyze").dec()
 
 
 @app.post("/diagram")
@@ -1231,46 +1328,69 @@ async def generate_diagram_only(request: Dict[str, Any]):
     """
     Генерация отдельной диаграммы
     """
-    
-    diagram_type = request.get("type", "component")
-    components = request.get("components", [])
-    relations = request.get("relations", [])
-    
-    # Преобразуем в модели
-    comp_specs = []
-    for c in components:
-        try:
-            comp_specs.append(ComponentSpec(**c))
-        except:
-            pass
-    
-    rel_specs = []
-    for r in relations:
-        try:
-            rel_specs.append(ComponentRelation(**r))
-        except:
-            pass
-    
-    if diagram_type == "component":
-        diagram = await generate_component_diagram(comp_specs, rel_specs)
-    else:
-        diagram = await generate_class_diagram(comp_specs, [], rel_specs)
-    
-    if diagram:
-        return diagram.dict()
-    
-    return {"error": "Failed to generate diagram"}
+
+    AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/diagram").inc()
+    start_time = time.time()
+
+    try:
+        diagram_type = request.get("type", "component")
+        components = request.get("components", [])
+        relations = request.get("relations", [])
+
+        # Преобразуем в модели
+        comp_specs = []
+        for c in components:
+            try:
+                comp_specs.append(ComponentSpec(**c))
+            except:
+                pass
+
+        rel_specs = []
+        for r in relations:
+            try:
+                rel_specs.append(ComponentRelation(**r))
+            except:
+                pass
+
+        if diagram_type == "component":
+            diagram = await generate_component_diagram(comp_specs, rel_specs)
+        else:
+            diagram = await generate_class_diagram(comp_specs, [], rel_specs)
+
+        duration = time.time() - start_time
+
+        # Метрики
+        AGENT_REQUESTS_TOTAL.labels(method="POST", endpoint="/diagram", status="success").inc()
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method="POST", endpoint="/diagram").observe(duration)
+
+        if diagram:
+            return diagram.dict()
+
+        return {"error": "Failed to generate diagram"}
+
+    except Exception as e:
+        AGENT_REQUESTS_TOTAL.labels(method="POST", endpoint="/diagram", status="error").inc()
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method="POST", endpoint="/diagram").observe(time.time() - start_time)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/diagram").dec()
 
 
 @app.get("/health")
 async def health_check():
-    """Health check"""
+    """Health check endpoint - не экспортирует метрики"""
     return {
         "status": "healthy",
         "service": "architect",
         "version": "2.0.0",
         "timestamp": datetime.now().isoformat()
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint - только метрики"""
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/")

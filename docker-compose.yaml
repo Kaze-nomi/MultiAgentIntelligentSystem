@@ -183,7 +183,7 @@ services:
       - "5678:5678"
     environment:
       - N8N_PROTOCOL=http
-      - N8N_HOST=0.0.0.0
+      - N8N_HOST=localhost
       - N8N_PORT=5678
       - N8N_METRICS=true
       - N8N_LOG_LEVEL=info
@@ -195,7 +195,7 @@ services:
       - N8N_RUNNERS_ENABLED=true
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - N8N_GIT_NODE_DISABLE_BARE_REPOS=true
-    command: start --tunnel
+      - WEBHOOK_URL=https://tellingly-undaunted-urial.cloudpub.ru:443
     env_file:
       - .env
     volumes:
@@ -209,49 +209,103 @@ services:
       project-manager:
         condition: service_healthy
 
+  # CloudPub - туннель для публикации вебхуков n8n
+  cloudpub:
+    image: cloudpub/cloudpub:latest
+    container_name: cloudpub
+    command: ["run"]  # Ключевое исправление - запуск в фоновом режиме
+    environment:
+      - TOKEN=${CLOUDPUB_TOKEN}
+      # HTTP сервис для туннелирования (n8n внутри сети Docker)
+      - HTTP=n8n:5678
+      - LOG_LEVEL=info
+    volumes:
+      # Для сохранения состояния туннеля между перезапусками
+      - cloudpub_data:/data
+    networks:
+      - agent-network
+    restart: unless-stopped
+    depends_on:
+      - n8n
+    # Добавляем healthcheck для мониторинга состояния туннеля
+    healthcheck:
+      test: ["CMD", "clo", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    # CloudPub не требует портов, так как создает исходящее соединение
+
   # ============================================================================
   # MONITORING
   # ============================================================================
   
-  # # Prometheus - метрики
-  # prometheus:
-  #   image: prom/prometheus:latest
-  #   container_name: prometheus
-  #   ports:
-  #     - "9090:9090"
-  #   volumes:
-  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-  #     - prometheus_data:/prometheus
-  #   command:
-  #     - '--config.file=/etc/prometheus/prometheus.yml'
-  #     - '--storage.tsdb.path=/prometheus'
-  #     - '--storage.tsdb.retention.time=7d'
-  #     - '--web.enable-lifecycle'
-  #   networks:
-  #     - agent-network
-  #   restart: unless-stopped
-  #   profiles:
-  #     - monitoring
+  # Prometheus - метрики
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yaml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    networks:
+      - agent-network
+    restart: unless-stopped
 
-  # # Grafana - дашборды
-  # grafana:
-  #   image: grafana/grafana:latest
-  #   container_name: grafana
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - GF_SECURITY_ADMIN_PASSWORD=admin
-  #     - GF_USERS_ALLOW_SIGN_UP=false
-  #   volumes:
-  #     - grafana_data:/var/lib/grafana
-  #     - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-  #   networks:
-  #     - agent-network
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - prometheus
-  #   profiles:
-  #     - monitoring
+  # Grafana - дашборды и визуализация метрик
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      # Настройки безопасности и администратора
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      
+      # Настройки provisioning для автоматической конфигурации
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - GF_PROVISIONING_ENABLED=true
+      
+      # Настройки для источников данных
+      - GF_DATASOURCES_PROMETHEUS_TYPE=prometheus
+      - GF_DATASOURCES_PROMETHEUS_ACCESS=proxy
+      - GF_DATASOURCES_PROMETHEUS_URL=http://prometheus:9090
+      - GF_DATASOURCES_PROMETHEUS_IS_DEFAULT=true
+      
+      # Настройки для дашбордов
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/multi-agent-dashboard.json
+      
+      # Настройки логирования
+      - GF_LOG_MODE=console
+      - GF_LOG_LEVEL=info
+      
+      # Настройки сервера
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      # Хранилище данных Grafana
+      - grafana_data:/var/lib/grafana
+      
+      # Конфигурационные файлы для автоматической настройки источников данных и дашбордов
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      
+      # Права доступа к файлам (важно для корректной работы в Docker)
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks:
+      - agent-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    user: "472"  # ID пользователя grafana в официальном образе для корректных прав доступа
 
 # ============================================================================
 # NETWORKS & VOLUMES
@@ -270,4 +324,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  cloudpub_data:
     driver: local

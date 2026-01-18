@@ -8,6 +8,10 @@ from typing import Dict, List, Optional, Any, Union
 from enum import Enum
 from pydantic import BaseModel, Field
 import uuid
+import logging
+
+# Настройка логирования для моделей
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================

@@ -35,9 +35,27 @@ from typing import Dict, List, Optional, Any, Tuple
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 import httpx
+
+# Prometheus metrics
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+
+# Стандартизированные метрики для всех агентов
+AGENT_REQUESTS_TOTAL = Counter('agent_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
+AGENT_RESPONSE_TIME_SECONDS_BUCKET = Histogram('agent_response_time_seconds_bucket', 'Request duration',
+                            buckets=[0.5, 1, 2, 5, 10, 30, 60, 120, 300], labelnames=['method', 'endpoint'])
+AGENT_ACTIVE_REQUESTS = Gauge('agent_active_requests', 'Number of active requests', ['method', 'endpoint'])
+
+# Общие метрики для всех агентов
+
+# Стандартизированные метрики для всех агентов
+PM_AGENT_CALLS = Counter('pm_agent_calls_total', 'Agent calls', ['agent_name', 'status'])
+PM_AGENT_RESPONSE_TIME_SECONDS_BUCKET = Histogram('pm_agent_response_time_seconds_bucket', 'Agent response time', ['agent_name'], buckets=[0.5, 1, 2, 5, 10, 30, 60, 120, 300])
+PM_ACTIVE_TASKS = Gauge('pm_active_tasks', 'Currently processing tasks', ['method', 'endpoint'])
+PM_TASKS_TOTAL = Counter('pm_tasks_total', 'Total tasks processed', ['status', 'method', 'endpoint'])
+PM_TASK_DURATION = Histogram('pm_task_duration_seconds_bucket', 'Task duration', buckets=[30, 60, 120, 300, 600, 1200])
 
 from models import (
     DocType, DocFormat, DocLanguage, ChangeType,
@@ -74,8 +92,10 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager"""
     global http_client
     http_client = httpx.AsyncClient(timeout=httpx.Timeout(LLM_TIMEOUT))
+    
     logger.info("Documentation Agent started")
     yield
+    
     await http_client.aclose()
     logger.info("Documentation Agent stopped")
 
@@ -90,6 +110,45 @@ app = FastAPI(
     version="2.1.0",
     lifespan=lifespan
 )
+
+# Add Prometheus metrics middleware
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    # Исключаем эндпоинты /health и /metrics из метрик
+    if request.url.path in ["/health", "/metrics"]:
+        return await call_next(request)
+    
+    agent_name = "documentation_agent"
+    AGENT_ACTIVE_REQUESTS.labels(method=request.method, endpoint=request.url.path).inc()
+    PM_ACTIVE_TASKS.labels(method=request.method, endpoint=request.url.path).inc()
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        duration = time.time() - start_time
+        status = str(response.status_code)
+
+        # Record metrics
+        AGENT_REQUESTS_TOTAL.labels(
+            method=request.method,
+            endpoint=request.url.path,
+            status=status
+        ).inc()
+
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(
+            method=request.method,
+            endpoint=request.url.path
+        ).observe(duration)
+        
+        # Обновляем стандартизированные метрики
+        PM_AGENT_CALLS.labels(agent_name=agent_name, status=status).inc()
+        PM_AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(agent_name=agent_name).observe(duration)
+        PM_TASKS_TOTAL.labels(status=status, method=request.method, endpoint=request.url.path).inc()
+        PM_TASK_DURATION.observe(duration)
+
+        return response
+    finally:
+        AGENT_ACTIVE_REQUESTS.labels(method=request.method, endpoint=request.url.path).dec()
+        PM_ACTIVE_TASKS.labels(method=request.method, endpoint=request.url.path).dec()
 
 
 # ============================================================================
@@ -185,7 +244,7 @@ async def call_llm(
 
             return content
         else:
-            # Логирование ошибки
+            # Логирование ошибки и обновление метрики
             error_log = {
                 "event": "llm_request_error",
                 "model": DEFAULT_MODEL,
@@ -195,11 +254,14 @@ async def call_llm(
                 "timestamp": datetime.now().isoformat()
             }
             logger.error(json.dumps(error_log, ensure_ascii=False))
+            
+            
             return ""
 
     except Exception as e:
         duration = time.time() - start_time
-        # Логирование исключения
+        
+        # Логирование исключения и обновление метрики
         exception_log = {
             "event": "llm_request_exception",
             "step": step,
@@ -209,6 +271,8 @@ async def call_llm(
             "timestamp": datetime.now().isoformat()
         }
         logger.error(json.dumps(exception_log, ensure_ascii=False))
+        
+        
         return ""
 
 
@@ -429,7 +493,7 @@ async def generate_readme(
     
     # Собираем информацию о коде
     code_summary = []
-    for f in code_files[:10]:
+    for f in code_files[:50]:
         code_summary.append({
             "path": f.get("path", ""),
             "description": f.get("description", ""),
@@ -437,7 +501,7 @@ async def generate_readme(
         })
     
     # Информация об архитектуре
-    components = architecture.get("components", [])[:10] if architecture else []
+    components = architecture.get("components", [])[:50] if architecture else []
     patterns = architecture.get("patterns", []) if architecture else []
     
     # Формируем список секций
@@ -451,7 +515,7 @@ async def generate_readme(
     if existing_readme:
         existing_section = f"""
 ## СУЩЕСТВУЮЩИЙ README (обнови его):
-{existing_readme[:5000]}
+{existing_readme[:100000]}
 """
     
     emoji_note = "Используй emoji для секций (📦, 🚀, ⚙️, etc.)" if doc_style.use_emojis else "Не используй emoji"
@@ -1310,18 +1374,19 @@ async def generate_changelog_only(request: Dict[str, Any]):
         "version": changelog_version.dict()
     }
 
+@app.get("/metrics")
+def metrics():
+    """Prometheus metrics endpoint"""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 @app.get("/health")
 async def health_check():
-    """Health check"""
+    """Health check endpoint - не экспортирует метрики"""
     return {
-    "status": "healthy",
-    "service": "documentation",
-    "version": "2.1.0",
-    "timestamp": datetime.now().isoformat(),
-    "features": {
-    "auto_doc_types": True,
-    "supported_types": [dt.value for dt in DocType]
-    }
+        "status": "healthy",
+        "service": "documentation",
+        "version": "2.1.0",
+        "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/")

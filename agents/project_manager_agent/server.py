@@ -23,10 +23,10 @@ from typing import Dict, List, Optional, Any, Tuple
 from contextlib import asynccontextmanager
 from enum import Enum
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 import httpx
-from prometheus_client import Counter, Histogram, Gauge, generate_latest
+from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from logging_config import setup_logging
 
@@ -83,13 +83,19 @@ class WorkflowStatus(str, Enum):
 # METRICS
 # ============================================================================
 
-TASKS_TOTAL = Counter('pm_tasks_total', 'Total tasks processed', ['status'])
-AGENT_CALLS = Counter('pm_agent_calls_total', 'Agent calls', ['agent', 'status'])
-REVIEW_ITERATIONS = Histogram('pm_review_iterations', 'Review iterations per task')
-TASK_DURATION = Histogram('pm_task_duration_seconds', 'Task duration',
-                          buckets=[30, 60, 120, 300, 600, 1200])
-ACTIVE_TASKS = Gauge('pm_active_tasks', 'Currently processing tasks')
-PIPELINE_RETRIES = Counter('pm_pipeline_retries_total', 'Pipeline retry attempts', ['success'])
+            # Gauge метрика для активных задач от n8n
+N8N_ACTIVE_TASKS = Gauge(
+                'n8n_active_tasks',
+                'Number of active tasks from n8n',
+                ['method', 'endpoint'],
+            )
+            
+            # Counter метрика для общего количества запросов от n8n
+N8N_REQUESTS_TOTAL = Counter(
+                'n8n_requests_total',
+                'Total requests from n8n',
+                ['method', 'endpoint'],
+            )
 
 # ============================================================================
 # HTTP CLIENT
@@ -102,8 +108,10 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager для FastAPI"""
     global http_client
     http_client = httpx.AsyncClient(timeout=httpx.Timeout(DEFAULT_TIMEOUT))
+    
     logger.info("HTTP client initialized")
     yield
+    
     await http_client.aclose()
     logger.info("HTTP client closed")
 
@@ -117,6 +125,33 @@ app = FastAPI(
     version="2.1.0",
     lifespan=lifespan
 )
+
+
+# ============================================================================
+# PROMETHEUS MIDDLEWARE
+# ============================================================================
+
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    """Middleware для отслеживания HTTP метрик"""
+    
+    agent_name = "project_manager_agent"
+    
+    start_time = time.time()
+    response = None
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+        
+        duration = time.time() - start_time
+
+        return response
+    except Exception as e:
+        status = "500"
+        duration = time.time() - start_time
+        # Логируем ошибку
+        logger.error(f"Request error: {str(e)}")
+        raise
 
 # ============================================================================
 # LLM HELPER
@@ -170,6 +205,12 @@ async def call_llm(
             completion_tokens = usage.get("completion_tokens", 0)
             total_tokens = usage.get("total_tokens", 0)
 
+            # Извлечение информации о токенах
+            usage = response_data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+
             # Извлечение reasoning (если присутствует)
             reasoning = None
             if "reasoning" in response_data["choices"][0]["message"]:
@@ -193,7 +234,7 @@ async def call_llm(
 
             return content
         else:
-            # Логирование ошибки
+            # Логирование ошибки и обновление метрики
             error_log = {
                 "event": "llm_request_error",
                 "model": DEFAULT_MODEL,
@@ -203,11 +244,14 @@ async def call_llm(
                 "timestamp": datetime.now().isoformat()
             }
             logger.error(json.dumps(error_log, ensure_ascii=False))
+            
+            
             return ""
 
     except Exception as e:
         duration = time.time() - start_time
-        # Логирование исключения
+        
+        # Логирование исключения и обновление метрики
         exception_log = {
             "event": "llm_request_exception",
             "model": DEFAULT_MODEL,
@@ -216,6 +260,8 @@ async def call_llm(
             "timestamp": datetime.now().isoformat()
         }
         logger.error(json.dumps(exception_log, ensure_ascii=False))
+        
+        
         return ""
 
 
@@ -611,8 +657,9 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
        - Анализирует существующую архитектуру
        - Проектирует новые компоненты
        - Определяет интерфейсы
-       - Создаёт диаграммы
+       - Создаёт диаграммы (UML)
        НУЖЕН если: новая фича, рефакторинг, изменение структуры
+       ВАЖНО: если требуется документация текущего кода, то ДОЛЖЕН БЫТЬ ВЫЗВАН ДО documentation
 
     2. code_writer - Написание кода
        - Пишет код по архитектуре
@@ -634,7 +681,7 @@ async def plan_pipeline(context: TaskContext) -> Pipeline:
        НУЖЕН: после финализации кода
 
     ПРАВИЛА PIPELINE:
-    - architect -> code_writer (если нужна архитектура)
+    - architect -> code_writer (ТОЛЬКО, если нужна архитектура)
     - code_writer -> code_reviewer (всегда)
     - code_reviewer может вернуть на code_writer (review loop)
     - documentation идёт последним
@@ -851,7 +898,6 @@ async def call_agent(
         
         if response.status_code == 200:
             result = response.json()
-            AGENT_CALLS.labels(agent=agent.value, status="success").inc()
             
             return AgentCallResult(
                 agent=agent,
@@ -861,7 +907,6 @@ async def call_agent(
             )
         else:
             error_msg = f"HTTP {response.status_code}: {response.text[:500]}"
-            AGENT_CALLS.labels(agent=agent.value, status="error").inc()
             
             return AgentCallResult(
                 agent=agent,
@@ -872,7 +917,6 @@ async def call_agent(
             
     except httpx.TimeoutException:
         duration = time.time() - start_time
-        AGENT_CALLS.labels(agent=agent.value, status="timeout").inc()
         
         return AgentCallResult(
             agent=agent,
@@ -883,7 +927,6 @@ async def call_agent(
         
     except Exception as e:
         duration = time.time() - start_time
-        AGENT_CALLS.labels(agent=agent.value, status="error").inc()
         
         return AgentCallResult(
             agent=agent,
@@ -1077,9 +1120,7 @@ async def handle_review_loop(context: TaskContext) -> TaskContext:
                 "quality_score": context.review_result.quality_score
             }
         )
-    
-    REVIEW_ITERATIONS.observe(context.review_iterations)
-    
+        
     return context
 
 # ============================================================================
@@ -1111,6 +1152,9 @@ async def execute_pipeline(
     error_details: Optional[str] = None
     
     retry_prefix = "[RETRY] " if is_retry else ""
+    
+    # Начинаем отсчет времени выполнения pipeline
+    pipeline_start_time = time.time()
     
     for i, step in enumerate(context.pipeline.steps):
         context.current_step_index = i
@@ -1213,6 +1257,10 @@ async def execute_pipeline(
     if critical_failure:
         context.current_state = TaskState.FAILED
         context.log_step("execute_pipeline", f"{retry_prefix}Pipeline FAILED due to critical error")
+        
+        # Обновляем метрику времени выполнения pipeline
+        pipeline_duration = time.time() - pipeline_start_time
+        
         return context, False, failed_step, error_details
     elif failed_steps > 0:
         # Есть ошибки, но не критические
@@ -1222,13 +1270,25 @@ async def execute_pipeline(
                 "execute_pipeline",
                 f"{retry_prefix}Pipeline completed with errors: {successful_steps} succeeded, {failed_steps} failed"
             )
+            
+            # Обновляем метрику времени выполнения pipeline
+            pipeline_duration = time.time() - pipeline_start_time
+            
             return context, True, failed_step, error_details  # Частичный успех
         else:
             context.current_state = TaskState.FAILED
             context.log_step("execute_pipeline", f"{retry_prefix}Pipeline FAILED - all steps failed")
+            
+            # Обновляем метрику времени выполнения pipeline
+            pipeline_duration = time.time() - pipeline_start_time
+            
             return context, False, failed_step, error_details
     else:
         context.log_step("execute_pipeline", f"{retry_prefix}Pipeline completed successfully. Steps executed: {len(executed_steps)}")
+        
+        # Обновляем метрику времени выполнения pipeline
+        pipeline_duration = time.time() - pipeline_start_time
+        
         return context, True, None, None
 
 # ============================================================================
@@ -1504,7 +1564,9 @@ async def process_workflow(request: WorkflowRequest):
     """
     
     start_time = time.time()
-    ACTIVE_TASKS.inc()
+
+    N8N_REQUESTS_TOTAL.labels(method='POST',endpoint='/process').inc(1)
+    N8N_ACTIVE_TASKS.labels(method='POST', endpoint='/process').inc(1)
     
     # Инициализация контекста - выносим наружу для доступа в except
     context = None
@@ -1580,8 +1642,7 @@ async def process_workflow(request: WorkflowRequest):
         # 6. RETRY LOGIC: Если pipeline упал ИЛИ нет файлов, пробуем перепланировать
         while not pipeline_success and pipeline_retry_count < MAX_PIPELINE_RETRIES:
             pipeline_retry_count += 1
-            PIPELINE_RETRIES.labels(success="attempt").inc()
-            
+                        
             context.log_step(
                 "retry_pipeline",
                 f"Pipeline failed or no files generated, attempting retry {pipeline_retry_count}/{MAX_PIPELINE_RETRIES}",
@@ -1653,7 +1714,7 @@ async def process_workflow(request: WorkflowRequest):
                 context.log_error("no_files_after_retry", error_details)
             
             if pipeline_success and has_files:
-                PIPELINE_RETRIES.labels(success="success").inc()
+                                
                 context.log_step("retry_pipeline", "Retry succeeded with files generated!")
                 logger.info(f"[{context.task_id[:8]}] Pipeline retry succeeded with {len(all_files)} files")
                 context.errors = []
@@ -1663,7 +1724,7 @@ async def process_workflow(request: WorkflowRequest):
                 )
 
             else:
-                PIPELINE_RETRIES.labels(success="failed").inc()
+                                
                 context.log_step(
                     "retry_pipeline",
                     "Retry failed or no files generated",
@@ -1714,10 +1775,7 @@ async def process_workflow(request: WorkflowRequest):
 
         # 11. Генерация summary
         summary = await generate_summary(context, workflow_status, duration)
-        
-        TASK_DURATION.observe(duration)
-        TASKS_TOTAL.labels(status=workflow_status.value).inc()
-        
+                
         context.log_step(
             "completed",
             f"Workflow finished with status: {workflow_status.value} in {duration:.1f}s",
@@ -1764,7 +1822,6 @@ async def process_workflow(request: WorkflowRequest):
         logger.exception(f"Workflow error: {e}")
         
         duration = time.time() - start_time
-        TASKS_TOTAL.labels(status="error").inc()
         
         # Если контекст был создан, возвращаем частичную информацию
         if context:
@@ -1799,7 +1856,9 @@ async def process_workflow(request: WorkflowRequest):
         )
         
     finally:
-        ACTIVE_TASKS.dec()
+        N8N_ACTIVE_TASKS.labels(method="POST"
+        , endpoint='/process').dec()
+
 
 # ============================================================================
 # PR REVIEW ENDPOINT
@@ -1812,6 +1871,9 @@ async def review_pull_request(request: PRReviewRequest):
     Вызывается из n8n при создании/обновлении PR
     """
     
+    N8N_REQUESTS_TOTAL.labels(method="POST", endpoint='/review/pr').inc()
+    N8N_ACTIVE_TASKS.labels(method="POST", endpoint='/review/pr').inc()
+    
     start_time = time.time()
     
     logger.info(f"PR Review request: #{request.pr_number} - {request.pr_title}")
@@ -1821,14 +1883,31 @@ async def review_pull_request(request: PRReviewRequest):
         files_for_review = []
         for file_info in request.changed_files:
             filename = file_info.get("filename", "")
-            content = request.file_contents.get(filename, "")
+            status = file_info.get("status", "modified")
             patch = file_info.get("patch", "")
+            
+            # Получаем content из file_contents
+            raw_content = request.file_contents.get(filename, "")
+            
+            # Парсим content - разделяем полный файл и patch если есть маркеры
+            full_content = ""
+            if "// === FULL FILE CONTENT ===" in raw_content:
+                # Это modified файл с полным содержимым
+                parts = raw_content.split("// === CHANGES (PATCH) ===")
+                full_content = parts[0].replace("// === FULL FILE CONTENT ===\n", "").strip()
+            elif status == "added":
+                # Для added файлов patch = полное содержимое
+                # Извлекаем чистый контент из patch формата
+                full_content = extract_content_from_patch(patch)
+            else:
+                # Fallback - используем как есть
+                full_content = raw_content
             
             files_for_review.append({
                 "path": filename,
-                "content": content,
-                "patch": patch,
-                "status": file_info.get("status", "modified"),
+                "content": full_content,      # Чистый контент файла
+                "patch": patch,               # Diff для понимания что изменилось
+                "status": status,
                 "additions": file_info.get("additions", 0),
                 "deletions": file_info.get("deletions", 0)
             })
@@ -1863,13 +1942,12 @@ async def review_pull_request(request: PRReviewRequest):
         review_result = await call_agent(
             AgentType.CODE_REVIEWER,
             review_request,
-            timeout=300  # 5 минут на ревью
+            timeout=300
         )
         
         if review_result.status != "success":
             logger.error(f"Code Reviewer failed: {review_result.error}")
             
-            # Возвращаем базовый ответ при ошибке
             return PRReviewResponse(
                 pr_number=request.pr_number,
                 pr_title=request.pr_title,
@@ -1956,6 +2034,41 @@ async def review_pull_request(request: PRReviewRequest):
             files_reviewed=0,
             review_body=f"## ❌ Ошибка автоматического ревью\n\n```\n{str(e)}\n```"
         )
+        
+    finally:
+        N8N_ACTIVE_TASKS.labels(method="POST", endpoint='/review/pr').dec()
+
+
+def extract_content_from_patch(patch: str) -> str:
+    """
+    Извлекает чистый контент из patch формата для added файлов.
+    
+    Patch для added файла выглядит так:
+    @@ -0,0 +1,5 @@
+    +line 1
+    +line 2
+    +line 3
+    
+    Возвращает:
+    line 1
+    line 2
+    line 3
+    """
+    if not patch:
+        return ""
+    
+    lines = []
+    for line in patch.split('\n'):
+        # Пропускаем заголовки @@ ... @@
+        if line.startswith('@@'):
+            continue
+        # Убираем + в начале добавленных строк
+        if line.startswith('+'):
+            lines.append(line[1:])
+        # Пропускаем - (удалённые) и контекстные строки для added
+        # Для added файлов их не должно быть, но на всякий случай
+    
+    return '\n'.join(lines)
 
 
 async def format_github_review_body(
@@ -2084,7 +2197,7 @@ def format_issue_markdown(issue: Dict) -> str:
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - не экспортирует метрики"""
     
     # Проверяем доступность агентов
     agents_status = {}
@@ -2101,18 +2214,18 @@ async def health_check():
         "version": "2.1.0",
         "timestamp": datetime.now().isoformat(),
         "agents": agents_status,
-        "features": {
-            "error_analysis": True,
-            "pipeline_retry": True,
-            "max_retries": MAX_PIPELINE_RETRIES
+        "metrics": {
+            "standard_metrics": True,
+            "n8n_metrics": True,
+            "n8n_identification_headers": ["X-n8n-Source", "X-n8n-request", "User-Agent"]
         }
     }
 
 
 @app.get("/metrics")
 async def metrics():
-    """Prometheus metrics endpoint"""
-    return generate_latest()
+    """Экспорт метрик Prometheus"""
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/")
@@ -2151,8 +2264,33 @@ async def root():
         },
         "endpoints": {
             "workflow": "POST /workflow/process",
+            "pr_review": "POST /review/pr",
             "health": "GET /health",
             "metrics": "GET /metrics"
+        },
+        "metrics": {
+            "standard_metrics": [
+                "agent_requests_total",
+                "agent_response_time_seconds_bucket",
+                "agent_active_requests",
+                "pm_agent_calls_total",
+                "pm_agent_response_time_seconds_bucket",
+                "pm_active_tasks",
+                "pm_tasks_total",
+                "pm_task_duration_seconds_bucket",
+                "pm_pipeline_retries_total",
+                "pm_pipeline_duration_seconds_bucket",
+                "pm_pipeline_executions_total",
+                "pm_review_iterations_total"
+            ],
+            "n8n_metrics": [
+                "n8n_active_tasks",
+                "n8n_requests_total"
+            ],
+            "n8n_identification": {
+                "headers": ["X-n8n-Source", "X-n8n-request", "User-Agent"],
+                "description": "Requests are identified as n8n requests if any of these headers are present"
+            }
         },
         "connected_agents": list(AGENT_URLS.keys())
     }

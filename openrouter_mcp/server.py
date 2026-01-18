@@ -14,9 +14,10 @@ from datetime import datetime
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 import requests
 from dotenv import load_dotenv
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from logging_config import setup_logging
 
@@ -25,6 +26,18 @@ load_dotenv()
 
 # Настройка логирования
 logger = setup_logging("openrouter_mcp")
+
+# ============================================================================
+# PROMETHEUS METRICS
+# ============================================================================
+
+# Метрики для OpenRouter MCP
+OPENROUTER_REQUESTS_TOTAL = Counter('openrouter_requests_total', 'Total requests to OpenRouter API', ['agent_name', 'model', 'status'])
+OPENROUTER_RESPONSE_TIME_SECONDS_BUCKET = Histogram('openrouter_response_time_seconds_bucket',
+                                                  'OpenRouter API response time',
+                                                  ['agent_name', 'model'],
+                                                  buckets=[0.5, 1, 2, 5, 10, 30, 60, 120, 300])
+OPENROUTER_TOKENS_TOTAL = Counter('openrouter_tokens_total', 'Total tokens used', ['agent_name', 'model', 'token_type'])
 
 # Конфигурация
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -131,6 +144,7 @@ async def chat_completion(
         
         # Построение запроса
         request_data = build_openrouter_request(chat_request)
+        model_name = request_data.get("model", "unknown")
         
         # Заголовки для OpenRouter
         headers = {
@@ -145,6 +159,9 @@ async def chat_completion(
         logger.info(f"Sending request to OpenRouter: {OPENROUTER_BASE_URL}")
         logger.debug(f"Stream mode: {is_stream}")
         
+        # Начинаем отсчет времени выполнения запроса
+        start_time = time.time()
+        
         response = requests.post(
             OPENROUTER_BASE_URL,
             headers=headers,
@@ -153,7 +170,14 @@ async def chat_completion(
             timeout=1000
         )
         
+        # Вычисляем время выполнения
+        duration = time.time() - start_time
+        
         logger.info(f"OpenRouter response status: {response.status_code}")
+        
+        # Обновляем метрики
+        OPENROUTER_REQUESTS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, status=str(response.status_code)).inc()
+        OPENROUTER_RESPONSE_TIME_SECONDS_BUCKET.labels(agent_name="openrouter-mcp", model=model_name).observe(duration)
         
         # Обработка ошибок
         if response.status_code != 200:
@@ -195,6 +219,17 @@ async def chat_completion(
         # Обработка обычного ответа
         response_data = response.json()
         logger.debug(f"OpenRouter response: {json.dumps(response_data, indent=2, ensure_ascii=False)}")
+        
+        # Обновляем метрики токенов
+        usage = response_data.get("usage", {})
+        if usage:
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+            
+            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, token_type="prompt").inc(prompt_tokens)
+            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, token_type="completion").inc(completion_tokens)
+            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, token_type="total").inc(total_tokens)
         
         # OpenRouter возвращает данные в OpenAI-совместимом формате,
         # поэтому просто возвращаем как есть
@@ -343,6 +378,12 @@ async def get_model(model_id: str, api_key: str = Depends(verify_api_key)):
         )
 
 
+@app.get("/metrics")
+async def metrics():
+    """Экспорт метрик Prometheus"""
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/health")
 async def health_check():
     """Проверка здоровья сервера"""
@@ -367,6 +408,7 @@ async def root():
             "completions": "POST /v1/completions",
             "models": "GET /v1/models",
             "model_info": "GET /v1/models/{model_id}",
+            "metrics": "GET /metrics",
             "health": "GET /health"
         },
         "documentation": "/docs"

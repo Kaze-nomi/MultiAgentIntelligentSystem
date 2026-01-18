@@ -1,0 +1,112 @@
+global:
+  scrape_interval: 15s      # Как часто собирать метрики
+  evaluation_interval: 15s  # Как часто оценивать правила
+  scrape_timeout: 10s       # Таймаут для сбора метрик
+
+# Конфигурация алерт-менеджера
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Конфигурация сбора метрик
+scrape_configs:
+  # Мониторинг самого Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # OpenRouter MCP - сервис для взаимодействия с OpenRouter API
+  - job_name: 'openrouter-mcp'
+    static_configs:
+      - targets: ['openrouter-mcp:8000']
+        labels:
+          service_type: 'mcp-server'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Project Manager Agent - агент управления проектами и координации работы
+  - job_name: 'project-manager'
+    static_configs:
+      - targets: ['project-manager:8000']
+        labels:
+          service_type: 'ai-agent'
+          agent_type: 'project-manager'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Architect Agent - агент архитектуры и проектирования систем
+  - job_name: 'architect'
+    static_configs:
+      - targets: ['architect:8000']
+        labels:
+          service_type: 'ai-agent'
+          agent_type: 'architect'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Code Writer Agent - агент для написания и генерации кода
+  - job_name: 'code-writer'
+    static_configs:
+      - targets: ['code-writer:8000']
+        labels:
+          service_type: 'ai-agent'
+          agent_type: 'code-writer'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Code Reviewer Agent - агент для ревью и анализа кода
+  - job_name: 'code-reviewer'
+    static_configs:
+      - targets: ['code-reviewer:8000']
+        labels:
+          service_type: 'ai-agent'
+          agent_type: 'code-reviewer'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Documentation Agent - агент для генерации и управления документацией
+  - job_name: 'documentation'
+    static_configs:
+      - targets: ['documentation:8000']
+        labels:
+          service_type: 'ai-agent'
+          agent_type: 'documentation'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 7s
+
+  # n8n (workflow automation) - платформа автоматизации рабочих процессов
+  - job_name: 'n8n'
+    static_configs:
+      - targets: ['n8n:5678']
+        labels:
+          service_type: 'orchestration'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Grafana - платформа визуализации метрик и дашбордов
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          service_type: 'monitoring'
+          environment: 'development'
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 15s

@@ -9,12 +9,14 @@ import re
 import time
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 import httpx
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from logging_config import setup_logging
 
@@ -35,6 +37,25 @@ logger = setup_logging("code_writer")
 OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
 LLM_TIMEOUT = 1000
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL")
+
+# ============================================================================
+# METRICS
+# ============================================================================
+
+# Стандартизированные метрики для всех агентов
+AGENT_REQUESTS_TOTAL = Counter('agent_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
+AGENT_RESPONSE_TIME_SECONDS_BUCKET = Histogram('agent_response_time_seconds_bucket', 'Request duration',
+                            buckets=[0.5, 1, 2, 5, 10, 30, 60, 120, 300], labelnames=['method', 'endpoint'])
+AGENT_ACTIVE_REQUESTS = Gauge('agent_active_requests', 'Number of active requests', ['method', 'endpoint'])
+
+# Общие метрики для всех агентов
+
+# Стандартизированные метрики для всех агентов
+PM_AGENT_CALLS = Counter('pm_agent_calls_total', 'Agent calls', ['agent_name', 'status'])
+PM_AGENT_RESPONSE_TIME_SECONDS_BUCKET = Histogram('pm_agent_response_time_seconds_bucket', 'Agent response time', ['agent_name'], buckets=[0.5, 1, 2, 5, 10, 30, 60, 120, 300])
+PM_ACTIVE_TASKS = Gauge('pm_active_tasks', 'Currently processing tasks', ['method', 'endpoint'])
+PM_TASKS_TOTAL = Counter('pm_tasks_total', 'Total tasks processed', ['status', 'method', 'endpoint'])
+PM_TASK_DURATION = Histogram('pm_task_duration_seconds_bucket', 'Task duration', buckets=[30, 60, 120, 300, 600, 1200])
 
 EXTENSION_TO_LANGUAGE = {
     "py": "python",
@@ -57,8 +78,10 @@ http_client: Optional[httpx.AsyncClient] = None
 async def lifespan(app: FastAPI):
     global http_client
     http_client = httpx.AsyncClient(timeout=httpx.Timeout(LLM_TIMEOUT))
+    
     logger.info("Code Writer Agent started")
     yield
+    
     await http_client.aclose()
     logger.info("Code Writer Agent stopped")
 
@@ -66,9 +89,47 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Code Writer Agent",
     description="Агент для написания кода по архитектуре",
-    version="2.2.0",
+    version="2.3.0",  # Обновлена версия
     lifespan=lifespan
 )
+
+
+# ============================================================================
+# PROMETHEUS MIDDLEWARE
+# ============================================================================
+
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    """Middleware для отслеживания HTTP метрик"""
+    # Исключаем эндпоинты /health и /metrics из метрик
+    if request.url.path in ["/health", "/metrics"]:
+        return await call_next(request)
+    
+    agent_name = "code_writer_agent"
+    AGENT_ACTIVE_REQUESTS.labels(method=request.method, endpoint=request.url.path).inc()
+    PM_ACTIVE_TASKS.labels(method=request.method, endpoint=request.url.path).inc()
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+    except Exception:
+        status = "500"
+        raise
+    else:
+        duration = time.time() - start_time
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method=request.method, endpoint=request.url.path).observe(duration)
+        AGENT_REQUESTS_TOTAL.labels(method=request.method, endpoint=request.url.path, status=status).inc()
+        
+        # Обновляем стандартизированные метрики
+        PM_AGENT_CALLS.labels(agent_name=agent_name, status=status).inc()
+        PM_AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(agent_name=agent_name).observe(duration)
+        PM_TASKS_TOTAL.labels(status=status, method=request.method, endpoint=request.url.path).inc()
+        PM_TASK_DURATION.observe(duration)
+        
+        return response
+    finally:
+        AGENT_ACTIVE_REQUESTS.labels(method=request.method, endpoint=request.url.path).dec()
+        PM_ACTIVE_TASKS.labels(method=request.method, endpoint=request.url.path).dec()
 
 
 # ============================================================================
@@ -153,7 +214,7 @@ async def call_llm(
 
             return content
         else:
-            # Логирование ошибки
+            # Логирование ошибки и обновление метрики
             error_log = {
                 "event": "llm_request_error",
                 "model": DEFAULT_MODEL,
@@ -163,11 +224,14 @@ async def call_llm(
                 "timestamp": datetime.now().isoformat()
             }
             logger.error(json.dumps(error_log, ensure_ascii=False))
+            
+            
             return ""
 
     except Exception as e:
         duration = time.time() - start_time
-        # Логирование исключения
+        
+        # Логирование исключения и обновление метрики
         exception_log = {
             "event": "llm_request_exception",
             "model": DEFAULT_MODEL,
@@ -176,6 +240,8 @@ async def call_llm(
             "timestamp": datetime.now().isoformat()
         }
         logger.error(json.dumps(exception_log, ensure_ascii=False))
+        
+        
         return ""
 
 
@@ -334,6 +400,283 @@ async def analyze_coding_style(
 
 
 # ============================================================================
+# CONTEXT MANAGER
+# ============================================================================
+
+class CodeContextManager:
+    """Управление контекстом между генерируемыми файлами"""
+    
+    def __init__(self):
+        self.generated_files: List[Dict[str, Any]] = []
+        self.file_contents: Dict[str, str] = {}
+        self.imports_map: Dict[str, List[str]] = {}
+        self.classes_map: Dict[str, List[str]] = {}
+        self.functions_map: Dict[str, List[str]] = {}
+        self.dependencies_map: Dict[str, List[str]] = {}
+    
+    def add_file(self, file_data: Dict[str, Any]):
+        """Добавляет файл в контекст"""
+        path = file_data.get("path", "")
+        if not path:
+            return
+        
+        self.generated_files.append(file_data)
+        
+        # Сохраняем содержимое
+        content = file_data.get("content", "")
+        if content:
+            self.file_contents[path] = content[:10000]  # Ограничиваем для контекста
+        
+        # Извлекаем структуру файла
+        self._analyze_file_structure(file_data)
+    
+    def _analyze_file_structure(self, file_data: Dict[str, Any]):
+        """Анализирует структуру файла для контекста"""
+        path = file_data.get("path", "")
+        content = file_data.get("content", "")
+        
+        if not path or not content:
+            return
+        
+        lang = detect_language(path)
+        
+        # Извлекаем импорты
+        imports = self._extract_imports(content, lang)
+        if imports:
+            self.imports_map[path] = imports
+        
+        # Извлекаем классы
+        classes = self._extract_classes(content, lang)
+        if classes:
+            self.classes_map[path] = classes
+        
+        # Извлекаем функции
+        functions = self._extract_functions(content, lang)
+        if functions:
+            self.functions_map[path] = functions
+    
+    def _extract_imports(self, content: str, lang: CodeLanguage) -> List[str]:
+        """Извлекает импорты из кода"""
+        imports = []
+        
+        if lang == CodeLanguage.PYTHON:
+            # Паттерны для Python импортов
+            patterns = [
+                r'^import\s+(\w+(\.\w+)*)(\s+as\s+\w+)?',
+                r'^from\s+(\w+(\.\w+)*)\s+import\s+',
+            ]
+            for line in content.split('\n'):
+                line = line.strip()
+                for pattern in patterns:
+                    if re.match(pattern, line):
+                        imports.append(line)
+                        break
+        
+        elif lang in [CodeLanguage.JAVASCRIPT, CodeLanguage.TYPESCRIPT]:
+            # Паттерны для JS/TS импортов
+            patterns = [
+                r'^import\s+.*from\s+[\'"](.+)[\'"]',
+                r'^const\s+\w+\s*=\s*require\([\'"](.+)[\'"]\)',
+            ]
+            for line in content.split('\n'):
+                line = line.strip()
+                for pattern in patterns:
+                    if re.search(pattern, line):
+                        imports.append(line)
+                        break
+        
+        return imports
+    
+    def _extract_classes(self, content: str, lang: CodeLanguage) -> List[str]:
+        """Извлекает объявления классов"""
+        classes = []
+        
+        if lang == CodeLanguage.PYTHON:
+            pattern = r'^class\s+(\w+)'
+            for line in content.split('\n'):
+                match = re.match(pattern, line.strip())
+                if match:
+                    classes.append(match.group(1))
+        
+        elif lang in [CodeLanguage.JAVASCRIPT, CodeLanguage.TYPESCRIPT, CodeLanguage.JAVA]:
+            pattern = r'^(?:export\s+)?(?:abstract\s+)?(?:public\s+)?class\s+(\w+)'
+            for line in content.split('\n'):
+                match = re.search(pattern, line.strip())
+                if match:
+                    classes.append(match.group(1))
+        
+        return classes
+    
+    def _extract_functions(self, content: str, lang: CodeLanguage) -> List[str]:
+        """Извлекает объявления функций"""
+        functions = []
+        
+        if lang == CodeLanguage.PYTHON:
+            pattern = r'^def\s+(\w+)'
+            for line in content.split('\n'):
+                match = re.match(pattern, line.strip())
+                if match:
+                    functions.append(match.group(1))
+        
+        elif lang in [CodeLanguage.JAVASCRIPT, CodeLanguage.TYPESCRIPT]:
+            patterns = [
+                r'^(?:export\s+)?(?:async\s+)?function\s+(\w+)',
+                r'^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?\(?.*\)?\s*=>',
+                r'^(?:export\s+)?let\s+(\w+)\s*=\s*(?:async\s+)?\(?.*\)?\s*=>',
+            ]
+            for line in content.split('\n'):
+                line = line.strip()
+                for pattern in patterns:
+                    match = re.search(pattern, line)
+                    if match:
+                        functions.append(match.group(1))
+                        break
+        
+        return functions
+    
+    def get_context_summary(self, max_files: int = 5) -> Dict[str, Any]:
+        """Возвращает сводку контекста для промпта"""
+        summary = {
+            "total_files": len(self.generated_files),
+            "recent_files": [],
+            "imports_by_file": {},
+            "classes_by_file": {},
+            "functions_by_file": {},
+            "file_relationships": []
+        }
+        
+        # Берем последние файлы
+        recent_files = self.generated_files[-max_files:] if self.generated_files else []
+        
+        for file_data in recent_files:
+            path = file_data.get("path", "")
+            description = file_data.get("description", "")
+            lang = file_data.get("language", "")
+            
+            file_summary = {
+                "path": path,
+                "description": description,
+                "language": lang,
+                "has_content": path in self.file_contents
+            }
+            
+            summary["recent_files"].append(file_summary)
+            
+            # Добавляем структуру если есть
+            if path in self.imports_map:
+                summary["imports_by_file"][path] = self.imports_map[path][:5]  # Ограничиваем
+            
+            if path in self.classes_map:
+                summary["classes_by_file"][path] = self.classes_map[path]
+            
+            if path in self.functions_map:
+                summary["functions_by_file"][path] = self.functions_map[path][:10]  # Ограничиваем
+        
+        # Анализируем связи между файлами
+        summary["file_relationships"] = self._analyze_relationships()
+        
+        return summary
+    
+    def _analyze_relationships(self) -> List[Dict[str, Any]]:
+        """Анализирует связи между файлами"""
+        relationships = []
+        
+        for file_path, imports in self.imports_map.items():
+            for imp in imports:
+                # Пытаемся определить, на какой файл ссылается импорт
+                target_file = self._find_import_target(imp, file_path)
+                if target_file:
+                    relationships.append({
+                        "source": file_path,
+                        "target": target_file,
+                        "type": "import",
+                        "detail": imp[:50]
+                    })
+        
+        return relationships
+    
+    def _find_import_target(self, import_stmt: str, source_file: str) -> Optional[str]:
+        """Находит файл, на который ссылается импорт"""
+        # Простая эвристика: ищем файлы с похожими именами
+        import_name = ""
+        
+        if "from" in import_stmt and "import" in import_stmt:
+            # Python: from module import something
+            match = re.search(r'from\s+([\w\.]+)\s+import', import_stmt)
+            if match:
+                import_name = match.group(1).replace('.', '/')
+        elif "import" in import_stmt and "from" in import_stmt:
+            # JS/TS: import something from 'module'
+            match = re.search(r'from\s+[\'"](.+?)[\'"]', import_stmt)
+            if match:
+                import_name = match.group(1)
+        
+        if import_name:
+            # Ищем файлы, содержащие import_name в пути
+            for file_path in self.file_contents.keys():
+                if import_name in file_path or \
+                   any(part in file_path for part in import_name.split('/')):
+                    return file_path
+        
+        return None
+    
+    def get_file_content_preview(self, file_path: str, max_lines: int = 50) -> str:
+        """Возвращает превью содержимого файла"""
+        if file_path in self.file_contents:
+            content = self.file_contents[file_path]
+            lines = content.split('\n')
+            return '\n'.join(lines[:max_lines])
+        return ""
+    
+    def get_related_files_context(self, current_file_path: str) -> Dict[str, Any]:
+        """Возвращает контекст связанных файлов для текущего файла"""
+        related = {
+            "imports_from": [],
+            "imports_to": [],
+            "similar_files": []
+        }
+        
+        current_dir = os.path.dirname(current_file_path)
+        current_name = os.path.basename(current_file_path)
+        
+        # Ищем файлы в той же директории
+        for file_path in self.file_contents.keys():
+            if file_path == current_file_path:
+                continue
+                
+            file_dir = os.path.dirname(file_path)
+            file_name = os.path.basename(file_path)
+            
+            # Файлы в той же директории
+            if file_dir == current_dir:
+                related["similar_files"].append({
+                    "path": file_path,
+                    "name": file_name,
+                    "preview": self.get_file_content_preview(file_path, 20)
+                })
+            
+            # Импорты из текущего файла в другие
+            if current_file_path in self.imports_map:
+                for imp in self.imports_map.get(current_file_path, []):
+                    if self._find_import_target(imp, current_file_path) == file_path:
+                        related["imports_to"].append({
+                            "target": file_path,
+                            "import": imp
+                        })
+            
+            # Импорты из других файлов в текущий
+            if file_path in self.imports_map:
+                for imp in self.imports_map.get(file_path, []):
+                    if self._find_import_target(imp, file_path) == current_file_path:
+                        related["imports_from"].append({
+                            "source": file_path,
+                            "import": imp
+                        })
+        
+        return related
+
+
+# ============================================================================
 # CODE GENERATION
 # ============================================================================
 
@@ -344,18 +687,22 @@ async def generate_code(
     repo_context: Dict[str, Any],
     coding_style: CodingStyle,
     file_to_generate: Dict[str, Any],
-    generated_files: List[Dict[str, Any]]
+    context_manager: CodeContextManager
 ) -> Dict[str, Any]:
     """
-    Генерирует код на основе архитектуры
+    Генерирует код на основе архитектуры с учетом контекста
     """
     
-    components = architecture.get("components", [])
-    file_structure = architecture.get("file_structure", [])
-    interfaces = architecture.get("interfaces", [])
-    patterns = architecture.get("patterns", [])
-    integration_points = architecture.get("integration_points", [])
+    components = architecture.get("components", []) if architecture else []
+    file_structure = architecture.get("file_structure", []) if architecture else []
+    interfaces = architecture.get("interfaces", []) if architecture else []
+    patterns = architecture.get("patterns", []) if architecture else []
+    integration_points = architecture.get("integration_points", []) if architecture else []
 
+    # Получаем контекст из менеджера
+    context_summary = context_manager.get_context_summary()
+    related_context = context_manager.get_related_files_context(file_to_generate.get("path", ""))
+    
     # Форматируем компоненты для промпта
     components_desc = []
     if components:
@@ -376,13 +723,55 @@ async def generate_code(
             if path:
                 files_desc.append(f"- {path}: содержит {', '.join(contains) if contains else 'модуль'}")
 
-    # Форматируем уже сгенерированные файлы для контекста
-    generated_files_desc = []
-    for gf in generated_files:
-        path = gf.get('path', '')
-        description = gf.get('description', '')
-        if path:
-            generated_files_desc.append(f"- {path}: {description}")
+    # Форматируем контекст уже сгенерированных файлов
+    context_files_desc = []
+    for file_summary in context_summary.get("recent_files", []):
+        path = file_summary.get("path", "")
+        description = file_summary.get("description", "")
+        language = file_summary.get("language", "")
+        
+        # Получаем превью содержимого
+        content_preview = context_manager.get_file_content_preview(path, 30)
+        
+        context_entry = f"""
+### Файл: {path}
+**Описание:** {description}
+**Язык:** {language}
+
+**Содержимое (первые 30 строк):**
+{content_preview}
+
+"""
+        
+        # Добавляем информацию о структуре
+        if path in context_summary.get("classes_by_file", {}):
+            classes = context_summary["classes_by_file"][path]
+            if classes:
+                context_entry += f"\n**Классы:** {', '.join(classes)}"
+        
+        if path in context_summary.get("functions_by_file", {}):
+            functions = context_summary["functions_by_file"][path]
+            if functions:
+                context_entry += f"\n**Функции:** {', '.join(functions[:5])}" + ("..." if len(functions) > 5 else "")
+        
+        context_files_desc.append(context_entry)
+    
+    # Форматируем связи с текущим файлом
+    related_context_desc = []
+    if related_context.get("imports_to"):
+        related_context_desc.append("### Импорты ИЗ этого файла:")
+        for imp in related_context["imports_to"][:3]:
+            related_context_desc.append(f"- → {imp['target']} ({imp['import'][:50]})")
+    
+    if related_context.get("imports_from"):
+        related_context_desc.append("### Импорты В этот файл:")
+        for imp in related_context["imports_from"][:3]:
+            related_context_desc.append(f"- ← {imp['source']} ({imp['import'][:50]})")
+    
+    if related_context.get("similar_files"):
+        related_context_desc.append("### Файлы в той же директории:")
+        for file_info in related_context["similar_files"][:3]:
+            related_context_desc.append(f"- {file_info['name']}: {file_info['preview'][:100]}...")
 
     # Получаем путь к файлу для генерации
     file_path = file_to_generate.get('path', '')
@@ -396,14 +785,21 @@ async def generate_code(
 ## ЗАДАЧА
 {task}
 
+## ТЕКУЩИЙ ФАЙЛ (для генерации)
+- Путь: {file_path}
+- Содержит: {file_to_generate.get('contains', 'компоненты архитектуры')}
+
+## КОНТЕКСТ УЖЕ СГЕНЕРИРОВАННЫХ ФАЙЛОВ ({context_summary.get('total_files', 0)} файлов всего)
+{chr(10).join(context_files_desc) if context_files_desc else 'Это первый файл в проекте'}
+
+## СВЯЗИ С ДРУГИМИ ФАЙЛАМИ
+{chr(10).join(related_context_desc) if related_context_desc else 'Связей с другими файлами пока не обнаружено'}
+
 ## КОМПОНЕНТЫ ДЛЯ РЕАЛИЗАЦИИ
 {chr(10).join(components_desc) if components_desc else 'Определи компоненты самостоятельно на основе задачи'}
 
-## СТРУКТУРА ФАЙЛОВ
+## СТРУКТУРА ФАЙЛОВ (из архитектуры)
 {chr(10).join(files_desc[:100]) if files_desc else 'Определи структуру самостоятельно'}
-
-## УЖЕ СГЕНЕРИРОВАННЫЕ ФАЙЛЫ (КОНТЕКСТ)
-{chr(10).join(generated_files_desc) if generated_files_desc else 'Это первый файл'}
 
 ## ИНТЕРФЕЙСЫ
 {json.dumps(interfaces, indent=2, ensure_ascii=False) if interfaces else 'Определи интерфейсы самостоятельно'}
@@ -411,6 +807,83 @@ async def generate_code(
 ## ПАТТЕРНЫ
 {', '.join(patterns) if patterns else 'Используй подходящие паттерны'}
 
+## ТЕХНОЛОГИИ
+- Язык: {tech_stack.primary_language}
+- Фреймворки: {', '.join(tech_stack.frameworks) if tech_stack.frameworks else 'стандартная библиотека'}
+
+## СТИЛЬ КОДА
+- Именование переменных: {coding_style.naming.variables}
+- Именование функций: {coding_style.naming.functions}
+- Именование классов: {coding_style.naming.classes}
+- Docstrings: {coding_style.docstring_format}
+- Отступы: {coding_style.indent_size} пробела
+
+## КОНТЕКСТ РЕПОЗИТОРИЯ (если есть)
+"""
+        # Добавляем контекст из репозитория
+        key_files = repo_context.get("key_files", {})
+        if key_files:
+            prompt += "\nСуществующие файлы в репозитории:\n"
+            for path, content in list(key_files.items())[:2]:  # Ограничиваем
+                prompt += f"\n{path}:\n```\n{content[:500]}...\n```\n"
+
+        prompt += f"""
+## ВАЖНЫЕ ТРЕБОВАНИЯ
+1. Пиши ПОЛНЫЙ РАБОЧИЙ код - НЕ заглушки, НЕ TODO, НЕ pass
+2. Файл должен быть законченным и работающим
+3. Добавляй все необходимые импорты в начале файла
+4. Добавляй docstrings к классам и функциям
+5. Обрабатывай возможные ошибки
+6. Код должен соответствовать указанному стилю
+7. Учитывай уже сгенерированные файлы при написании кода
+8. Согласуй импорты с существующими файлами
+9. Используй классы и функции из уже сгенерированных файлов где это уместно
+10. Следи за согласованностью API между файлами
+
+## ФОРМАТ ОТВЕТА
+Верни JSON объект (без markdown блоков):
+
+{{
+    "file": {{
+        "path": "{file_path}",
+        "content": "полный код файла",
+        "language": "язык программирования",
+        "description": "описание назначения файла",
+        "dependencies": ["список зависимостей от других файлов"],
+        "exports": ["что экспортирует этот файл"]
+    }},
+    "implementation_notes": [
+        "заметка о реализации 1",
+        "заметка о реализации 2"
+    ],
+    "integration_points": [
+        {{"type": "import", "from": "файл", "what": "что импортируется"}},
+        {{"type": "export", "to": "файл", "what": "что экспортируется"}}
+    ]
+}}
+
+ВАЖНО: Верни только JSON, без ```json``` блоков!"""
+    else:
+        # Промпт без архитектуры - упрощённый
+        prompt = f"""Напиши полный рабочий код для файла: {file_path}
+
+## ЗАДАЧА
+{task}
+
+## КОНТЕКСТ УЖЕ СГЕНЕРИРОВАННЫХ ФАЙЛОВ ({context_summary.get('total_files', 0)} файлов всего)
+{chr(10).join(context_files_desc) if context_files_desc else 'Это первый файл в проекте'}
+
+## СВЯЗИ С ДРУГИМИ ФАЙЛАМИ
+{chr(10).join(related_context_desc) if related_context_desc else 'Связей с другими файлами пока не обнаружено'}
+
+## КОНТЕКСТ РЕПОЗИТОРИЯ
+"""
+        key_files = repo_context.get("key_files", {})
+        if key_files:
+            for path, content in list(key_files.items())[:2]:
+                prompt += f"\n{path}:\n```\n{content[:500]}...\n```\n"
+
+        prompt += f"""
 ## ТЕХНОЛОГИИ
 - Язык: {tech_stack.primary_language}
 - Фреймворки: {', '.join(tech_stack.frameworks) if tech_stack.frameworks else 'стандартная библиотека'}
@@ -430,7 +903,7 @@ async def generate_code(
 5. Обрабатывай возможные ошибки
 6. Код должен соответствовать указанному стилю
 7. Учитывай уже сгенерированные файлы при написании кода
-8. Выбирай расположения файлов в соответствии с архитектурой, не суй всё в корневую директорию, если этого не требует архитектура
+8. Согласуй импорты с существующими файлами
 
 ## ФОРМАТ ОТВЕТА
 Верни JSON объект (без markdown блоков):
@@ -440,54 +913,8 @@ async def generate_code(
         "path": "{file_path}",
         "content": "полный код файла",
         "language": "язык программирования",
-        "description": "описание назначения файла"
-    }},
-    "implementation_notes": [
-        "заметка о реализации 1",
-        "заметка о реализации 2"
-    ]
-}}
-
-ВАЖНО: Верни только JSON, без ```json``` блоков!"""
-    else:
-        # Промпт без архитектуры - упрощённый
-        prompt = f"""Напиши полный рабочий код для файла: {file_path}
-
-## ЗАДАЧА
-{task}
-
-## КОНТЕКСТ ПРОЕКТА
-{chr(10).join(generated_files_desc) if generated_files_desc else 'Это первый файл в проекте'}
-
-## ТЕХНОЛОГИИ
-- Язык: {tech_stack.primary_language}
-- Фреймворки: {', '.join(tech_stack.frameworks) if tech_stack.frameworks else 'стандартная библиотека'}
-
-## СТИЛЬ КОДА
-- Именование переменных: {coding_style.naming.variables}
-- Именование функций: {coding_style.naming.functions}
-- Именование классов: {coding_style.naming.classes}
-- Docstrings: {coding_style.docstring_format}
-- Отступы: {coding_style.indent_size} пробела
-
-## ТРЕБОВАНИЯ
-1. Пиши ПОЛНЫЙ РАБОЧИЙ код - НЕ заглушки, НЕ TODO, НЕ pass
-2. Файл должен быть законченным и работающим
-3. Добавляй все необходимые импорты в начале файла
-4. Добавляй docstrings к классам и функциям
-5. Обрабатывай возможные ошибки
-6. Код должен соответствовать указанному стилю
-7. Определи подходящую структуру самостоятельно на основе задачи
-
-## ФОРМАТ ОТВЕТА
-Верни JSON объект (без markdown блоков):
-
-{{
-    "file": {{
-        "path": "{file_path}",
-        "content": "полный код файла",
-        "language": "язык программирования",
-        "description": "описание назначения файла"
+        "description": "описание назначения файла",
+        "dependencies": ["список зависимостей от других файлов"]
     }},
     "implementation_notes": [
         "заметка о реализации 1",
@@ -497,8 +924,8 @@ async def generate_code(
 
 ВАЖНО: Верни только JSON, без ```json``` блоков!"""
 
-    logger.info("Generating code...")
-    response = await call_llm(prompt, max_tokens=100000, temperature=0.3, step="code_writer_code_generation")
+    logger.info(f"Generating code for {file_path} with context of {context_summary.get('total_files', 0)} files")
+    response = await call_llm(prompt, max_tokens=100000, temperature=0.3, step="code_writer_code_generation_with_context")
     
     if not response:
         logger.error("Empty LLM response")
@@ -514,13 +941,13 @@ async def generate_code(
     if not file_data:
         logger.warning("No file in parsed response")
         # Попробуем ещё раз с более простым промптом
-        return await generate_code_simple(task, tech_stack, coding_style)
+        return await generate_code_simple(task, tech_stack, coding_style, context_manager)
 
     # Возвращаем в формате массива для совместимости
     files = [file_data]
     result["files"] = files
 
-    logger.info(f"Generated 1 file: {file_data.get('path', 'unknown')}")
+    logger.info(f"Generated 1 file: {file_data.get('path', 'unknown')} with context awareness")
     return result
 
 
@@ -528,7 +955,7 @@ async def generate_code_simple(
     task: str,
     tech_stack: TechStack,
     coding_style: CodingStyle,
-    repo_context: Optional[Dict[str, Any]] = None
+    context_manager: CodeContextManager
 ) -> Dict[str, Any]:
     """
     Упрощённая генерация когда основной метод не сработал
@@ -536,22 +963,27 @@ async def generate_code_simple(
     
     logger.info("Trying simple code generation...")
 
-    # Добавляем контекст репозитория если есть
-    repo_info = ""
-    if repo_context:
-        key_files = repo_context.get("key_files", {})
-        if key_files:
-            repo_info = "\n\nКОНТЕКСТ ПРОЕКТА:\n"
-            for path, content in list(key_files.items())[:3]:  # Ограничиваем до 3 файлов
-                repo_info += f"Файл {path}:\n{content[:1000]}...\n\n"
+    # Получаем контекст
+    context_summary = context_manager.get_context_summary()
 
     prompt = f"""Напиши код для следующей задачи.
 
 ЗАДАЧА: {task}
 
-ЯЗЫК: {tech_stack.primary_language}{repo_info}
+## КОНТЕКСТ ({context_summary.get('total_files', 0)} файлов уже сгенерировано)
+"""
+    
+    if context_summary.get("recent_files"):
+        prompt += "Последние сгенерированные файлы:\n"
+        for file_info in context_summary["recent_files"][:3]:
+            prompt += f"- {file_info['path']}: {file_info['description']}\n"
+    
+    prompt += f"""
+ЯЗЫК: {tech_stack.primary_language}
 
 Создай все необходимые файлы с полным рабочим кодом.
+
+Учитывай уже существующие файлы при генерации.
 
 Верни ответ в формате JSON:
 {{
@@ -560,7 +992,8 @@ async def generate_code_simple(
             "path": "путь/к/файлу",
             "content": "полный код",
             "language": "{tech_stack.primary_language.lower()}",
-            "description": "описание"
+            "description": "описание",
+            "dependencies": ["другие_файлы"]
         }}
     ],
     "implementation_notes": ["как запустить"]
@@ -568,7 +1001,7 @@ async def generate_code_simple(
 
 Только JSON, без markdown!"""
 
-    response = await call_llm(prompt, max_tokens=100000, temperature=0.4, step="code_writer_code_generation_simple")
+    response = await call_llm(prompt, max_tokens=100000, temperature=0.4, step="code_writer_code_generation_simple_with_context")
     
     if not response:
         return {"files": [], "implementation_notes": ["Simple generation also failed"]}
@@ -589,10 +1022,11 @@ async def revise_code(
     architecture: Dict[str, Any],
     tech_stack: TechStack,
     coding_style: CodingStyle,
+    context_manager: CodeContextManager,
     iteration: int = 1
 ) -> Dict[str, Any]:
     """
-    Исправляет код по замечаниям ревьюера
+    Исправляет код по замечаниям ревьюера с учетом контекста
     """
 
     original_files = original_code.get("files", [])
@@ -600,6 +1034,9 @@ async def revise_code(
     if not original_files:
         logger.warning("No original files to revise")
         return original_code
+
+    # Получаем контекст для всех файлов
+    context_summary = context_manager.get_context_summary()
 
     results = {
         "files": [],
@@ -616,6 +1053,9 @@ async def revise_code(
             # No issues for this file, keep as is
             results["files"].append(file)
             continue
+
+        # Получаем контекст связанных файлов
+        related_context = context_manager.get_related_files_context(file_path)
 
         # Sort issues by severity
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -643,10 +1083,25 @@ async def revise_code(
                 "suggestion": issue.get("suggestion", "")
             })
 
+        # Форматируем контекст связанных файлов
+        context_desc = []
+        if related_context.get("imports_to"):
+            context_desc.append("### Этот файл импортирует из:")
+            for imp in related_context["imports_to"][:3]:
+                context_desc.append(f"- {imp['target']}: {imp['import'][:50]}")
+        
+        if related_context.get("imports_from"):
+            context_desc.append("### Этот файл импортируется в:")
+            for imp in related_context["imports_from"][:3]:
+                context_desc.append(f"- {imp['source']}: {imp['import'][:50]}")
+
         prompt = f"""Исправь код одного файла по замечаниям код-ревьюера.
 
 ## ОРИГИНАЛЬНЫЙ ФАЙЛ
 {json.dumps(file_for_prompt, indent=2, ensure_ascii=False)}
+
+## КОНТЕКСТ СВЯЗАННЫХ ФАЙЛОВ
+{chr(10).join(context_desc) if context_desc else 'Нет информации о связанных файлах'}
 
 ## ЗАМЕЧАНИЯ (отсортированы по важности)
 {json.dumps(issues_for_prompt, indent=2, ensure_ascii=False)}
@@ -659,6 +1114,8 @@ async def revise_code(
 2. По возможности исправь medium замечания
 3. Сохрани общую структуру кода
 4. Не удаляй существующий функционал
+5. Учитывай связанные файлы при исправлении
+6. Не ломай импорты/экспорты с другими файлами
 
 ## ФОРМАТ ОТВЕТА
 Верни JSON (без markdown блоков):
@@ -668,15 +1125,17 @@ async def revise_code(
         "path": "{file_path}",
         "content": "исправленный полный код",
         "language": "язык",
-        "description": "что исправлено"
+        "description": "что исправлено",
+        "dependencies": ["обновленные зависимости"]
     }},
     "addressed_issues": ["id1", "id2"],
-    "implementation_notes": ["что было изменено"]
+    "implementation_notes": ["что было изменено"],
+    "integration_changes": ["изменения в интеграции с другими файлами"]
 }}
 
 Только JSON!"""
 
-        response = await call_llm(prompt, max_tokens=100000, temperature=0.2, step="code_writer_code_revision")
+        response = await call_llm(prompt, max_tokens=100000, temperature=0.2, step="code_writer_code_revision_with_context")
         result = parse_json_response(response)
 
         if not result or not result.get("file"):
@@ -751,7 +1210,6 @@ def post_process_files(
     files: List[Dict[str, Any]],
     tech_stack: TechStack
 ) -> List[CodeFile]:
-    """Пост-обработка файлов (теперь обрабатывает как массивы файлов, так и одиночные файлы)"""
     """Пост-обработка файлов"""
     
     processed = []
@@ -812,6 +1270,7 @@ def post_process_files(
 async def process_code_write(request: CodeWriteRequest):
     """Основной endpoint для написания кода"""
 
+    AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/process").inc()
     start_time = time.time()
     task_id = str(uuid.uuid4())
 
@@ -852,6 +1311,18 @@ async def process_code_write(request: CodeWriteRequest):
             except ValueError:
                 pass
 
+        # Инициализируем менеджер контекста
+        context_manager = CodeContextManager()
+        
+        # Загружаем существующие файлы в контекст
+        key_files = repo_context.get("key_files", {})
+        for path, content in key_files.items():
+            context_manager.add_file({
+                "path": path,
+                "content": content,
+                "description": f"Existing file from repository",
+            })
+
         # Выполняем действие
         if action == "write_code":
             result = {}
@@ -863,7 +1334,6 @@ async def process_code_write(request: CodeWriteRequest):
 
             if file_structure:
                 # Есть структура файлов - генерируем по архитектуре
-                generated_files = []  # Накопленный контекст сгенерированных файлов
                 for fs in file_structure:
                     result_fs = await generate_code(
                         task=request.task,
@@ -872,15 +1342,18 @@ async def process_code_write(request: CodeWriteRequest):
                         repo_context=repo_context,
                         coding_style=coding_style,
                         file_to_generate=fs,
-                        generated_files=generated_files
+                        context_manager=context_manager
                     )
 
-                    # Добавляем сгенерированный файл в контекст для следующих файлов
+                    # Добавляем сгенерированный файл в контекст
                     if result_fs.get("file"):
-                        generated_files.append(result_fs["file"])
+                        context_manager.add_file(result_fs["file"])
 
-                    result["files"].extend(result_fs["files"])
+                    if result_fs.get("files"):
+                        result["files"].extend(result_fs["files"])
                     result["implementation_notes"].extend(result_fs["implementation_notes"])
+                    
+                    logger.info(f"[{task_id[:8]}] Generated file {fs.get('path', 'unknown')}, context now has {len(context_manager.generated_files)} files")
             else:
                 # Нет архитектуры - генерируем простой файл
                 logger.info("No architecture provided, generating simple file")
@@ -888,14 +1361,24 @@ async def process_code_write(request: CodeWriteRequest):
                     task=request.task,
                     tech_stack=tech_stack,
                     coding_style=coding_style,
-                    repo_context=repo_context
+                    context_manager=context_manager
                 )
+                
+                # Добавляем сгенерированные файлы в контекст
+                if result.get("files"):
+                    for file_data in result["files"]:
+                        context_manager.add_file(file_data)
 
         elif action == "revise_code":
             original_code = data.get("original_code", {})
             review_comments = data.get("review_comments", [])
             suggestions = data.get("suggestions", [])
             iteration = data.get("iteration", 1)
+
+            # Добавляем оригинальные файлы в контекст
+            if original_code.get("files"):
+                for file_data in original_code["files"]:
+                    context_manager.add_file(file_data)
 
             result = await revise_code(
                 original_code=original_code,
@@ -904,6 +1387,7 @@ async def process_code_write(request: CodeWriteRequest):
                 architecture=architecture,
                 tech_stack=tech_stack,
                 coding_style=coding_style,
+                context_manager=context_manager,
                 iteration=iteration
             )
 
@@ -919,30 +1403,43 @@ async def process_code_write(request: CodeWriteRequest):
         duration = time.time() - start_time
         status = "success" if files else "error"
 
-        logger.info(f"[{task_id[:8]}] {status}: {len(files)} files in {duration:.1f}s")
+        # Обновляем метрики
+        AGENT_REQUESTS_TOTAL.labels(method="POST", endpoint="/process", status=status).inc()
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method="POST", endpoint="/process").observe(duration)
+
+        logger.info(f"[{task_id[:8]}] {status}: {len(files)} files in {duration:.1f}s, context had {len(context_manager.generated_files)} files")
 
         # Если нет файлов - логируем детали для диагностики
         if not files:
             logger.error(f"[{task_id[:8]}] No files generated!")
             logger.error(f"[{task_id[:8]}] implementation_notes: {result.get('implementation_notes', [])}")
 
-        return CodeWriteResponse(
+        response = CodeWriteResponse(
             task_id=task_id,
             status=status,
             files=[f.dict() for f in files],
-            implementation_notes=result.get("implementation_notes", []),    
+            implementation_notes=result.get("implementation_notes", []),
             changes_made=[],
             addressed_issues=result.get("addressed_issues", []),
             unaddressed_issues=result.get("unaddressed_issues", []),
             language=primary_language,
             coding_style_used=coding_style,
-            duration_seconds=duration
+            duration_seconds=duration,
+            context_info={
+                "total_files_in_context": len(context_manager.generated_files),
+                "files_analyzed": len(context_manager.file_contents)
+            }
         )
 
+        AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/process").dec()
+        return response
+
     except HTTPException:
+        AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/process").dec()
         raise
     except Exception as e:
         logger.exception(f"[{task_id[:8]}] Error: {e}")
+        AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/process").dec()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -953,36 +1450,53 @@ async def process_code_write(request: CodeWriteRequest):
 @app.post("/generate-single")
 async def generate_single_file(request: Dict[str, Any]):
     """Генерация одного файла (для тестирования)"""
-    
+
+    AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/generate-single").inc()
+    start_time = time.time()
     task = request.get("task", "")
     file_path = request.get("file_path", "main.py")
     language = request.get("language", "python")
-    
-    prompt = f"""Напиши код для файла {file_path}
+
+    try:
+        prompt = f"""Напиши код для файла {file_path}
 
 Задача: {task}
 
 Верни только код, без JSON обёртки, без ```."""
-    
-    content = await call_llm(prompt, max_tokens=100000, step="code_writer_single_file_generation")
-    content = clean_code_content(content, detect_language(file_path))
-    
-    return {
-        "path": file_path,
-        "content": content,
-        "language": language
-    }
+
+        content = await call_llm(prompt, max_tokens=100000, step="code_writer_single_file_generation")
+        content = clean_code_content(content, detect_language(file_path))
+
+        duration = time.time() - start_time
+        AGENT_REQUESTS_TOTAL.labels(method="POST", endpoint="/generate-single", status="success").inc()
+        AGENT_RESPONSE_TIME_SECONDS_BUCKET.labels(method="POST", endpoint="/generate-single").observe(duration)
+
+        AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/generate-single").dec()
+        return {
+            "path": file_path,
+            "content": content,
+            "language": language
+        }
+    except Exception as e:
+        AGENT_ACTIVE_REQUESTS.labels(method="POST", endpoint="/generate-single").dec()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
 async def health_check():
-    """Health check"""
+    """Health check endpoint - не экспортирует метрики"""
     return {
         "status": "healthy",
         "service": "code_writer",
-        "version": "2.2.0",
+        "version": "2.3.0",  # Обновлена версия
         "timestamp": datetime.now().isoformat()
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint - только метрики"""
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/")
@@ -990,14 +1504,21 @@ async def root():
     """Root endpoint"""
     return {
         "service": "Code Writer Agent",
-        "version": "2.2.0",
-        "description": "Writes code based on architecture specifications",
+        "version": "2.3.0",  # Обновлена версия
+        "description": "Writes code based on architecture specifications with context awareness",
         "endpoints": {
             "process": "POST /process - main endpoint",
             "generate_single": "POST /generate-single - single file generation",
-            "health": "GET /health"
+            "health": "GET /health",
+            "metrics": "GET /metrics - Prometheus metrics"
         },
-        "actions": ["write_code", "revise_code"]
+        "actions": ["write_code", "revise_code"],
+        "features": [
+            "Context-aware code generation",
+            "Inter-file dependency tracking",
+            "Import/export relationship analysis",
+            "Coding style consistency"
+        ]
     }
 
 
