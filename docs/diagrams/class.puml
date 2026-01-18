@@ -1,0 +1,24 @@
+@startuml Weather Service Class Diagram
+
+interface IWeatherService {
+    +get_weather() : WeatherData
+}
+
+class WeatherData {
+    +city : str
+    +temperature : float
+    +description : str
+    +humidity : int
+}
+
+WeatherData --|> BaseModel
+
+class WeatherService {
+    +api_key : str
+    +base_url : str
+    +get_weather(city, units) : WeatherData
+}
+
+WeatherService ..|> IWeatherService
+
+@enduml
