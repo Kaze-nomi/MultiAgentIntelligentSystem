@@ -1,0 +1,13 @@
+@startuml Factorial Calculator Class Diagram
+title Factorial Calculator Class Diagram
+
+interface IFactorialCalculator {
+    + compute_factorial() : int
+}
+
+class FactorialCalculator {
+    + compute_factorial(n) : int
+}
+
+FactorialCalculator ..|> IFactorialCalculator
+@enduml
