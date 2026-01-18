@@ -1,0 +1,59 @@
+@startuml
+title PlantUML Diagram Generator Classes
+
+class BaseModel {
+}
+
+class ComponentModel {
+  + name: str
+  + type: str
+  + layer: str
+}
+
+ComponentModel --|> BaseModel
+
+class InterfaceModel {
+  + name: str
+  + methods: List[MethodModel]
+}
+
+InterfaceModel --|> BaseModel
+
+class RelationModel {
+  + source: str
+  + target: str
+  + relation_type: str
+}
+
+RelationModel --|> BaseModel
+
+class MethodModel {
+  + name: str
+  + parameters: List[ParameterModel]
+  + return_type: str
+}
+
+MethodModel --|> BaseModel
+
+class ParameterModel {
+  + name: str
+  + type: str
+  + required: bool
+}
+
+ParameterModel --|> BaseModel
+
+interface IPlantUMLGenerator {
+  + generate_diagram(): str
+  + validate_diagram(): bool
+}
+
+class PlantUMLDiagramGenerator {
+  + diagram_type: str
+  + generate_diagram(components, interfaces, relations): str
+  + validate_diagram(diagram_code): bool
+}
+
+PlantUMLDiagramGenerator ..|> IPlantUMLGenerator
+
+@enduml
