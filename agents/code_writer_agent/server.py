@@ -34,7 +34,7 @@ from models import (
 
 logger = setup_logging("code_writer")
 
-OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
+OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-proxy:8000")
 LLM_TIMEOUT = 1000
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL")
 

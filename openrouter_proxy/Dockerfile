@@ -10,12 +10,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Копирование файлов зависимостей
-COPY openrouter_mcp/requirements.txt .
+COPY openrouter_proxy/requirements.txt .
 # Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование исходного кода
-COPY openrouter_mcp/server.py .
+COPY openrouter_proxy/server.py .
 COPY logging_config.py .
 
 # Порт приложения

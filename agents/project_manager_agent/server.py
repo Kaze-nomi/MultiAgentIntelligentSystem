@@ -46,7 +46,7 @@ from models import (
 logger = setup_logging("project_manager")
 
 # URLs агентов
-OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-mcp:8000")
+OPENROUTER_MCP_URL = os.getenv("OPENROUTER_MCP_URL", "http://openrouter-proxy:8000")
 ARCHITECT_URL = os.getenv("ARCHITECT_URL", "http://architect:8000")
 CODE_WRITER_URL = os.getenv("CODE_WRITER_URL", "http://code-writer:8000")
 CODE_REVIEWER_URL = os.getenv("CODE_REVIEWER_URL", "http://code-reviewer:8000")

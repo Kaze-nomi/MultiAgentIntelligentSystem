@@ -4,11 +4,11 @@ services:
   # ============================================================================
   
   # OpenRouter MCP Server - прокси к LLM
-  openrouter-mcp:
+  openrouter-proxy:
     build:
       context: .
-      dockerfile: openrouter_mcp/Dockerfile
-    container_name: openrouter-mcp
+      dockerfile: openrouter_proxy/Dockerfile
+    container_name: openrouter-proxy
     ports:
       - "8000:8000"
     environment:
@@ -42,7 +42,7 @@ services:
     ports:
       - "8001:8000"
     environment:
-      - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
+      - OPENROUTER_MCP_URL=http://openrouter-proxy:8000
       - ARCHITECT_URL=http://architect:8000
       - CODE_WRITER_URL=http://code-writer:8000
       - CODE_REVIEWER_URL=http://code-reviewer:8000
@@ -54,7 +54,7 @@ services:
       - agent-network
     restart: unless-stopped
     depends_on:
-      openrouter-mcp:
+      openrouter-proxy:
         condition: service_healthy
       architect:
         condition: service_started
@@ -80,7 +80,7 @@ services:
     ports:
       - "8002:8000"
     environment:
-      - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
+      - OPENROUTER_MCP_URL=http://openrouter-proxy:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
     volumes:
       - ./logs:/app/logs
@@ -88,7 +88,7 @@ services:
       - agent-network
     restart: unless-stopped
     depends_on:
-      openrouter-mcp:
+      openrouter-proxy:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -105,7 +105,7 @@ services:
     ports:
       - "8003:8000"
     environment:
-      - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
+      - OPENROUTER_MCP_URL=http://openrouter-proxy:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
     volumes:
       - ./logs:/app/logs
@@ -113,7 +113,7 @@ services:
       - agent-network
     restart: unless-stopped
     depends_on:
-      openrouter-mcp:
+      openrouter-proxy:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -130,7 +130,7 @@ services:
     ports:
       - "8004:8000"
     environment:
-      - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
+      - OPENROUTER_MCP_URL=http://openrouter-proxy:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
     volumes:
       - ./logs:/app/logs
@@ -138,7 +138,7 @@ services:
       - agent-network
     restart: unless-stopped
     depends_on:
-      openrouter-mcp:
+      openrouter-proxy:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -155,7 +155,7 @@ services:
     ports:
       - "8005:8000"
     environment:
-      - OPENROUTER_MCP_URL=http://openrouter-mcp:8000
+      - OPENROUTER_MCP_URL=http://openrouter-proxy:8000
       - DEFAULT_MODEL=${DEFAULT_MODEL}
     volumes:
       - ./logs:/app/logs
@@ -163,7 +163,7 @@ services:
       - agent-network
     restart: unless-stopped
     depends_on:
-      openrouter-mcp:
+      openrouter-proxy:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

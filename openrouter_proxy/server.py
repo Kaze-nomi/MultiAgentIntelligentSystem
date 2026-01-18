@@ -25,7 +25,7 @@ from logging_config import setup_logging
 load_dotenv()
 
 # Настройка логирования
-logger = setup_logging("openrouter_mcp")
+logger = setup_logging("openrouter_proxy")
 
 # ============================================================================
 # PROMETHEUS METRICS
@@ -176,8 +176,8 @@ async def chat_completion(
         logger.info(f"OpenRouter response status: {response.status_code}")
         
         # Обновляем метрики
-        OPENROUTER_REQUESTS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, status=str(response.status_code)).inc()
-        OPENROUTER_RESPONSE_TIME_SECONDS_BUCKET.labels(agent_name="openrouter-mcp", model=model_name).observe(duration)
+        OPENROUTER_REQUESTS_TOTAL.labels(agent_name="openrouter-proxy", model=model_name, status=str(response.status_code)).inc()
+        OPENROUTER_RESPONSE_TIME_SECONDS_BUCKET.labels(agent_name="openrouter-proxy", model=model_name).observe(duration)
         
         # Обработка ошибок
         if response.status_code != 200:
@@ -227,9 +227,9 @@ async def chat_completion(
             completion_tokens = usage.get("completion_tokens", 0)
             total_tokens = usage.get("total_tokens", 0)
             
-            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, token_type="prompt").inc(prompt_tokens)
-            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, token_type="completion").inc(completion_tokens)
-            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-mcp", model=model_name, token_type="total").inc(total_tokens)
+            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-proxy", model=model_name, token_type="prompt").inc(prompt_tokens)
+            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-proxy", model=model_name, token_type="completion").inc(completion_tokens)
+            OPENROUTER_TOKENS_TOTAL.labels(agent_name="openrouter-proxy", model=model_name, token_type="total").inc(total_tokens)
         
         # OpenRouter возвращает данные в OpenAI-совместимом формате,
         # поэтому просто возвращаем как есть

@@ -19,9 +19,9 @@ scrape_configs:
     scrape_interval: 5s
 
   # OpenRouter MCP - сервис для взаимодействия с OpenRouter API
-  - job_name: 'openrouter-mcp'
+  - job_name: 'openrouter-proxy'
     static_configs:
-      - targets: ['openrouter-mcp:8000']
+      - targets: ['openrouter-proxy:8000']
         labels:
           service_type: 'mcp-server'
           environment: 'development'

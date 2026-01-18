@@ -26,7 +26,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # Переменные окружения
 ENV DEFAULT_MODEL=1
 ENV PYTHONUNBUFFERED=1
-ENV OPENROUTER_MCP_URL=http://openrouter-mcp:8000
+ENV OPENROUTER_MCP_URL=http://openrouter-proxy:8000
 ENV ARCHITECT_URL=http://architect:8000
 ENV CODE_WRITER_URL=http://code-writer:8000
 ENV CODE_REVIEWER_URL=http://code-reviewer:8000
