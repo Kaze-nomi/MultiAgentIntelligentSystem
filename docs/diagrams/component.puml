@@ -1,0 +1,10 @@
+@startuml
+title Component Diagram for Factorial Calculator
+
+package "Business Layer" {
+    component [FactorialCalculator] as FC #blue
+    interface [IFactorialCalculator] as IFC #green
+    FC ..|> IFC : implements
+}
+
+@enduml
