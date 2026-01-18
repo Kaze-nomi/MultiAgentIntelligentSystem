@@ -1,0 +1,15 @@
+@startuml
+title Component Diagram for Project Context System
+
+skinparam component {
+  BackgroundColor<<service>> LightBlue
+  BackgroundColor<<interface>> LightGreen
+}
+
+package "Business Layer" {
+  component ProjectContextWriter <<service>>
+  interface IContextWriter
+  ProjectContextWriter ..|> IContextWriter
+}
+
+@enduml
