@@ -1,0 +1,14 @@
+@startuml
+title Component Diagram for Power Calculation System
+
+skinparam component {
+    BackgroundColor<<service>> LightBlue
+}
+
+package "Business Layer" {
+    component PowerOfTwoCalculator as calc <<service>>
+    interface IPowerCalculator as iface
+    calc ..|> iface : implements
+}
+
+@enduml
