@@ -427,6 +427,6 @@ class PRReviewResponse(BaseModel):
     review_summary: str
     issues: List[str]
     suggestions: List[str]
-    quality_score: int
+    quality_score: float
     files_reviewed: int
     review_body: str  # Готовый текст для GitHub review
