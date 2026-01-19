@@ -1,0 +1,13 @@
+@startuml Power Calculator Architecture
+
+interface IPowerCalculator {
+    + calculate_power_of_two(): int
+}
+
+class PowerOfTwoCalculator <<service>> {
+    + calculate_power_of_two(n): int
+}
+
+PowerOfTwoCalculator ..|> IPowerCalculator
+
+@enduml
